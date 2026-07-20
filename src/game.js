@@ -385,6 +385,16 @@ export function stepFixed(dt) {
   if (anyPow) { G.run.maxNopowT = Math.max(G.run.maxNopowT, G.run.nopowT); G.run.nopowT = 0; }
   else G.run.nopowT += dt;
 
+  /* moving-hazard telegraph: bell/bark once as a mover comes into view (§5 fairness) */
+  for (const o of G.obs) {
+    if (!o.move || o.done || o.warned) continue;
+    const rel = o.d - G.dist;
+    if (rel < G.speed * 1.3 && rel > 0) {
+      o.warned = true;
+      cb.sfx && cb.sfx(o.kind === 'bball' ? 'bounce' : 'bell');
+    }
+  }
+
   /* movers + collisions */
   updateMovers(G.obs, G.dist, G.time);
   const events = checkCollisions(G);

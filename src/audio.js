@@ -121,4 +121,5 @@ export const sfx = {
     }
   },
   whistle() { blip(1450, 0.12, 'sine', 0.16, 320); setTimeout(() => blip(1450, 0.2, 'sine', 0.16, 380), 150); },
+  bounce() { blip(180, 0.14, 'sine', 0.24, 260); setTimeout(() => blip(240, 0.12, 'sine', 0.18, 200), 130); },
 };
