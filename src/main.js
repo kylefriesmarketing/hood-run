@@ -139,7 +139,7 @@ function onState(s) {
   if (s === STATES.RUNNING) { musicStart(); UI.hideScreens(); }
   else if (s === STATES.PAUSED) { musicStop(); UI.showScreen('paused'); }
   else if (s === STATES.CRASHED) { musicStop(); }
-  else if (s === STATES.COUNTDOWN) { UI.hideScreens(); }
+  else if (s === STATES.COUNTDOWN) { UI.hideScreens(); introT = 1.9; }
   else if (s === STATES.HOME) { musicStop(); }
   if (s !== STATES.COUNTDOWN) UI.showCountdown(null);
 }
@@ -185,8 +185,10 @@ UI.initUI({
 });
 
 /* ---------------- view ---------------- */
-let camAng = 0, playerAng = 0, viewTime = 0, whistleT = 3, partyFxT = 0;
+let camAng = 0, playerAng = 0, viewTime = 0, whistleT = 3, partyFxT = 0, introT = 0;
 const camPos = new THREE.Vector3(), lookAt = new THREE.Vector3(), pPos = new THREE.Vector3(), oPos = new THREE.Vector3();
+const introPos = new THREE.Vector3(), introLook = new THREE.Vector3();
+const smooth = t => t * t * (3 - 2 * t);
 const dogCameo = W.mkDogCameo(); W.scene.add(dogCameo); dogCameo.visible = false;
 const speedLinesEl = document.getElementById('speed-lines');
 const debugEl = document.getElementById('debug');
@@ -307,12 +309,24 @@ function updateView(dt) {
     legs[2].rotation.x = Math.sin(ph + Math.PI) * 0.9; legs[3].rotation.x = Math.sin(ph + Math.PI) * 0.9;
   } else dogCameo.visible = false;
 
-  /* camera */
+  /* camera — normal chase framing */
   const fx = -Math.sin(camAng), fz = -Math.cos(camAng);
   camPos.set(pPos.x - fx * 6.8, 3.3 + G.py * 0.35, pPos.z - fz * 6.8);
-  if (G.shake > 0 && !rm) { camPos.x += (Math.random() - 0.5) * G.shake * 0.7; camPos.y += (Math.random() - 0.5) * G.shake * 0.6; }
-  W.camera.position.lerp(camPos, 1 - Math.exp(-dt * 14));
   lookAt.set(pPos.x + fx * 9, 1.4 + G.py * 0.5, pPos.z + fz * 9);
+
+  /* opening beat: burst out of the bank. Camera sits ahead of Jay looking
+     back at him + the bank, then swings to the chase cam as the run begins. */
+  introT = Math.max(0, introT - dt);
+  const introK = smooth(Math.min(1, Math.max(0, (introT - 0.5) / 1.4)));
+  if (introK > 0.001) {
+    // ahead of Jay and up high, looking back over him at the City Trust facade
+    introPos.set(pPos.x + fx * 10, 5.0, pPos.z + fz * 10);
+    introLook.set(pPos.x - fx * 13, 6.5, pPos.z - fz * 13);
+    camPos.lerp(introPos, introK);
+    lookAt.lerp(introLook, introK);
+  }
+  if (G.shake > 0 && !rm) { camPos.x += (Math.random() - 0.5) * G.shake * 0.7; camPos.y += (Math.random() - 0.5) * G.shake * 0.6; }
+  W.camera.position.lerp(camPos, 1 - Math.exp(-dt * (introK > 0.05 ? 9 : 14)));
   W.camera.lookAt(lookAt);
   const fovKick = rm ? 0.25 : 0.7;
   W.camera.fov = 60 + Math.max(0, G.speed - TUNE.speed0) * fovKick; W.camera.updateProjectionMatrix();

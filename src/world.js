@@ -463,7 +463,7 @@ export function mkBankFacade() {
       g2.fillStyle = '#ffd23c'; g2.font = 'bold 34px Georgia'; g2.textAlign = 'center';
       g2.fillText('CITY TRUST BANK', w / 2, 38);
     }) }));
-  sign.position.set(0, 9.6, -2.05); g.add(sign);
+  sign.position.set(0, 9.6, -2.05); sign.rotation.y = Math.PI; g.add(sign);   // face the street (the intro camera)
   for (let i = 0; i < 3; i++) g.add(box(22 - i * 1.6, 0.3, 1.2, 0x9a9082, 0, 0.15 + i * 0.3, -2.4 - i * 0.5));
   const lamp = box(0.4, 0.4, 0.4, 0, -9, 11.5, -1.6, new THREE.MeshBasicMaterial({ color: 0xff4040 }));
   lamp.userData.alarmLamp = true; g.add(lamp);                            // silent-alarm beacon
@@ -727,6 +727,11 @@ export function buildSegment(seg, opts) {
 
 function buildStreetDressing(g, seg, d, opts, dd) {
   const L = seg.len;
+  // The next segment's road turns into the INSIDE corner of this junction, so
+  // keep that side clear near the exit or buildings/props poke into the street.
+  const turnSide = seg.exit === 'R' ? 1 : seg.exit === 'L' ? -1 : 0;
+  const CORNER_CLEAR = 15;
+  const sideEnd = side => (side === turnSide) ? (L - CORNER_CLEAR) : (L - 6);
   // sidewalks
   for (const s of [-1, 1]) {
     const sw = new THREE.Mesh(BOX, new THREE.MeshLambertMaterial({ map: sideTex(d.side) }));
@@ -743,11 +748,13 @@ function buildStreetDressing(g, seg, d, opts, dd) {
   // buildings
   for (const side of [-1, 1]) {
     let dpos = 5;
+    const endD = sideEnd(side);
     const texes = buildingTexes(seg.district);
-    while (dpos < L - 6) {
+    while (dpos < endD) {
       const w = rand(9, 15);
       const roll = Math.random();
-      if (roll < 0.1 * dd && dpos + 8 < L - 6 && d.decor?.murals) {   // mural lot
+      if (dpos + w > endD) break;                                    // no partial building over the corner
+      if (roll < 0.1 * dd && dpos + 8 < endD && d.decor?.murals) {   // mural lot
         const wall = new THREE.Mesh(new THREE.PlaneGeometry(8, 3.4), new THREE.MeshLambertMaterial({ map: muralTex() }));
         wall.position.set(side * (WALL_X + 0.28), 1.7, -(dpos + 4));
         wall.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2;
@@ -773,11 +780,12 @@ function buildStreetDressing(g, seg, d, opts, dd) {
         dpos += w + rand(0, 2);
       }
     }
-    // streetlights + sidewalk props
-    for (let d2 = 10 + (side > 0 ? 8 : 0); d2 < L - 8; d2 += 17) {
+    // streetlights + sidewalk props (clear the turn corner too)
+    const propEnd = Math.min(L - 8, sideEnd(side));
+    for (let d2 = 10 + (side > 0 ? 8 : 0); d2 < propEnd; d2 += 17) {
       const sl = mkStreetlight(); sl.position.set(side * (HALF + 0.9), 0.24, -d2); sl.rotation.y = side > 0 ? 0 : Math.PI; g.add(sl);
     }
-    for (let d2 = rand(8, 20); d2 < L - 8; d2 += rand(13, 24) / dd) {
+    for (let d2 = rand(8, 20); d2 < propEnd; d2 += rand(13, 24) / dd) {
       const roll = Math.random();
       if (d.decor?.trees && roll < 0.3) { const t = mkTree(); t.position.set(side * (HALF + 1.7), 0.24, -d2); g.add(t); }
       else if (d.decor?.stands && roll < 0.35) { const st = mkStand(); st.position.set(side * (HALF + 1.8), 0.24, -d2); st.rotation.y = side > 0 ? Math.PI / 2 : -Math.PI / 2; g.add(st); }
