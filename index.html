@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<title>HOOD RUN — outrun the block</title>
+<title>HOOD RUN — Own Every Block</title>
+<meta name="description" content="Hood Run is a fast, original three-lane city runner. Dodge hazards, chain stylish moves, and light up the neighborhood.">
 <style>
   :root{
     --gold:#ffc93c; --pink:#ff4f9a; --cyan:#3be8ff; --bg:#160f26; --card:#221739;
@@ -26,6 +27,12 @@
   .pow .bar i{ display:block; height:100%; background:var(--gold); border-radius:2px; }
   #flash{ position:fixed; inset:0; background:radial-gradient(ellipse at center, transparent 40%, rgba(255,40,40,.55)); opacity:0; pointer-events:none; z-index:6; transition:opacity .12s; }
   #combo{ position:fixed; left:50%; top:34%; transform:translateX(-50%); font-weight:900; font-size:26px; color:#6dff8b; text-shadow:0 2px 8px #000; opacity:0; pointer-events:none; z-index:6; transition:opacity .2s, transform .2s; }
+  #district{ position:fixed; left:50%; top:max(62px, calc(env(safe-area-inset-top) + 58px)); transform:translateX(-50%); z-index:6; padding:6px 14px; border-radius:999px; background:rgba(10,6,20,.58); border:1px solid rgba(255,255,255,.14); color:var(--cyan); font-size:12px; font-weight:900; letter-spacing:1.5px; text-transform:uppercase; opacity:0; transition:opacity .3s; pointer-events:none; }
+  #stylebox{ position:absolute; left:50%; bottom:max(18px, env(safe-area-inset-bottom)); transform:translateX(-50%); width:min(430px,78vw); text-align:center; }
+  #styleline{ display:flex; justify-content:space-between; margin-bottom:5px; color:#fff; font-weight:900; font-size:13px; text-shadow:0 2px 4px #000; }
+  #meter{ height:10px; border-radius:99px; overflow:hidden; border:1px solid rgba(255,255,255,.2); background:rgba(10,6,20,.72); box-shadow:0 3px 12px rgba(0,0,0,.35); }
+  #meter-fill{ height:100%; width:0; border-radius:inherit; background:linear-gradient(90deg,var(--cyan),var(--pink),var(--gold)); transition:width .12s linear; }
+  #pause-btn{ position:fixed; right:14px; bottom:max(14px, env(safe-area-inset-bottom)); z-index:7; pointer-events:auto; width:44px; height:44px; border-radius:12px; border:1px solid rgba(255,255,255,.18); background:rgba(10,6,20,.62); color:#fff; font-size:18px; cursor:pointer; }
 
   /* ---------- Overlays ---------- */
   .overlay{ position:fixed; inset:0; display:none; align-items:center; justify-content:center; z-index:10;
@@ -53,6 +60,10 @@
   .controls b{ color:#fff; font-weight:800; }
   .beststrip{ margin-top:16px; font-size:14px; color:#9f92c9; }
   .beststrip b{ color:var(--gold); font-size:17px; }
+  .missionstrip{ margin:14px auto 0; display:grid; gap:5px; max-width:400px; text-align:left; }
+  .mission{ display:flex; justify-content:space-between; gap:12px; padding:7px 10px; border-radius:9px; background:rgba(255,255,255,.05); color:#cfc4ff; font-size:12px; }
+  .mission.done{ color:#6dff8b; }
+  .mission strong{ color:#fff; white-space:nowrap; }
 
   #over-cause{ font-size:17px; color:#ff9a9a; font-weight:700; margin-bottom:14px; }
   .over-title{ font-size:clamp(38px,9vw,58px); font-weight:900; font-style:italic; transform:rotate(-2deg); letter-spacing:-1px;
@@ -79,40 +90,47 @@
   <div class="hud-top">
     <div class="stat" id="hud-score">0</div>
     <div class="stat" id="hud-dist">0m</div>
-    <div class="stat" id="hud-cash">$0</div>
+    <div class="stat" id="hud-cash">● 0</div>
   </div>
   <div id="pows"></div>
+  <div id="stylebox">
+    <div id="styleline"><span id="style-label">STYLE 1×</span><span id="party-label">CROSSTOWN</span></div>
+    <div id="meter"><div id="meter-fill"></div></div>
+  </div>
+  <button id="pause-btn" aria-label="Pause game">Ⅱ</button>
 </div>
 <div id="flash"></div>
 <div id="combo"></div>
 <div id="tip"></div>
+<div id="district"></div>
 
 <div id="menu" class="overlay show">
   <div class="card">
     <div class="title">HOOD<br>RUN</div>
-    <div class="subtitle">outrun the block</div>
-    <div class="tagline">You grabbed the last bag of chips off the stoop —<br>and every stray on the block wants it. <b>RUN.</b></div>
+    <div class="subtitle">own every block</div>
+    <div class="tagline">The Crosstown Dash is live. Read the street, find your rhythm,<br>and turn the whole city into your playground.</div>
     <button class="btn" id="play-btn">▶ &nbsp;RUN</button>
     <div class="controls">
       <b>⬅ ➡</b><span>switch lanes · turn corners</span>
-      <b>⬆ / Space</b><span>jump the junk</span>
-      <b>⬇</b><span>slide under stuff</span>
+      <b>⬆ / Space</b><span>jump hazards</span>
+      <b>⬇</b><span>slide under barriers</span>
       <b>Swipe</b><span>same moves on mobile</span>
     </div>
     <div class="beststrip" id="beststrip"></div>
+    <div class="missionstrip" id="missionstrip"></div>
   </div>
 </div>
 
 <div id="over" class="overlay">
   <div class="card">
-    <div class="over-title">RUN OVER</div>
+    <div class="over-title">NICE RUN</div>
     <div id="over-cause"></div>
     <div class="results">
       <div class="res"><div class="v" id="ov-score">0</div><div class="l">Score</div></div>
       <div class="res"><div class="v" id="ov-dist">0m</div><div class="l">Distance</div></div>
-      <div class="res"><div class="v" id="ov-cash">$0</div><div class="l">Cash</div></div>
+      <div class="res"><div class="v" id="ov-cash">0</div><div class="l">Coins</div></div>
     </div>
-    <div id="newbest">★ NEW BLOCK RECORD ★</div>
+    <div id="newbest">★ NEW CROSSTOWN RECORD ★</div>
     <div class="btn-row">
       <button class="btn" id="retry-btn">RUN IT BACK</button>
       <button class="btn small" id="menu-btn">MENU</button>
@@ -133,7 +151,7 @@
 import * as THREE from './lib/three.module.js';
 
 /* ============================================================
-   HOOD RUN — a Temple-Run-style endless runner set on the block.
+   HOOD RUN — an original endless city runner built around flow and style.
    All geometry procedural, all textures canvas-drawn, audio synth.
    ============================================================ */
 
@@ -141,7 +159,7 @@ const LANE_W = 2.2, ROAD_W = 8, HALF = ROAD_W/2, SIDE_W = 3.2;
 const WALL_X = HALF + SIDE_W;              // building faces
 const GRAV = 24, JUMP_V = 8.8, SLIDE_T = 0.75;
 const SPEED0 = 11.5, SPEED_MAX = 30;
-const GAP_MAX = 10, GAP_CAUGHT = 2.0;
+const PARTY_DUR = 8;
 
 const $ = id => document.getElementById(id);
 const rand = (a,b)=>a+Math.random()*(b-a);
@@ -150,6 +168,14 @@ const pick = a => a[Math.floor(Math.random()*a.length)];
 const clamp=(v,a,b)=>v<a?a:(v>b?b:v);
 const lerp=(a,b,t)=>a+(b-a)*t;
 function lerpAngle(a,b,t){ let d=b-a; while(d>Math.PI)d-=Math.PI*2; while(d<-Math.PI)d+=Math.PI*2; return a+d*t; }
+
+const DISTRICTS = [
+  { label:'The Block', at:0, bg:0x1a1230, fog:0x241a38 },
+  { label:'Market Mile', at:650, bg:0x291326, fog:0x3b2035 },
+  { label:'Downtown Cut', at:1300, bg:0x101d35, fog:0x1b2b46 },
+];
+
+function makeRng(seed){ let s=(seed>>>0)||1; return ()=>{ s=(s*1664525+1013904223)>>>0; return s/4294967296; }; }
 
 /* ---------------- renderer / scene ---------------- */
 const renderer = new THREE.WebGLRenderer({ canvas:$('gl'), antialias:true });
@@ -423,9 +449,11 @@ function mkHoop(){
 }
 function mkCash(){
   const g=new THREE.Group();
-  const b=box(0.62,0.2,0.34,0x35b558); g.add(b);
-  g.add(box(0.2,0.22,0.36,0xe8e4c8,0,0,0));
-  const glow=new THREE.Mesh(new THREE.CircleGeometry(0.5,12), new THREE.MeshBasicMaterial({color:0x51ff7e,transparent:true,opacity:0.18,blending:THREE.AdditiveBlending,depthWrite:false}));
+  const coin=new THREE.Mesh(new THREE.CylinderGeometry(0.36,0.36,0.12,18), new THREE.MeshLambertMaterial({color:0xffc93c,emissive:0x5a3500}));
+  coin.rotation.z=Math.PI/2; g.add(coin);
+  const stamp=new THREE.Mesh(new THREE.TorusGeometry(0.2,0.035,6,16), new THREE.MeshBasicMaterial({color:0xfff1a3}));
+  stamp.rotation.y=Math.PI/2; stamp.position.x=0.065; g.add(stamp);
+  const glow=new THREE.Mesh(new THREE.CircleGeometry(0.5,12), new THREE.MeshBasicMaterial({color:0xffd95e,transparent:true,opacity:0.2,blending:THREE.AdditiveBlending,depthWrite:false}));
   glow.rotation.x=-Math.PI/2; glow.position.y=-0.4; g.add(glow);
   return g;
 }
@@ -446,9 +474,23 @@ function mkKicks(){
   g.add(box(0.2,0.06,0.29,0xff4f9a,0.18,0.04,0));
   return g;
 }
+function mkShield(){
+  const g=new THREE.Group();
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(0.42,0.1,8,18), new THREE.MeshLambertMaterial({color:0x74ff7a,emissive:0x164c22}));
+  ring.rotation.x=Math.PI/2; g.add(ring);
+  const core=new THREE.Mesh(new THREE.CircleGeometry(0.32,18), new THREE.MeshBasicMaterial({color:0xa8ffb1,transparent:true,opacity:0.65,side:THREE.DoubleSide}));
+  core.rotation.x=Math.PI/2; g.add(core); return g;
+}
+function mkBolt(){
+  const g=new THREE.Group();
+  const a=box(0.22,0.72,0.22,0xffc93c,-0.1,0.18,0,new THREE.MeshLambertMaterial({color:0xffc93c,emissive:0x6a3d00})); a.rotation.z=-0.45; g.add(a);
+  const b=box(0.22,0.72,0.22,0xff8a3c,0.12,-0.18,0,new THREE.MeshLambertMaterial({color:0xff8a3c,emissive:0x5a2200})); b.rotation.z=-0.45; g.add(b); return g;
+}
 const POW_DEFS = {
-  boombox:{ mk:mkBoombox, dur:9, label:'📻 Magnet', color:'#3be8ff' },
-  kicks:{ mk:mkKicks, dur:9, label:'👟 2× Cash', color:'#ffc93c' },
+  boombox:{ mk:mkBoombox, dur:9, label:'🧲 Coin Magnet', color:'#3be8ff' },
+  kicks:{ mk:mkKicks, dur:9, label:'✨ Double Style', color:'#ff4f9a' },
+  shield:{ mk:mkShield, dur:999, label:'🛡 Fresh Start', color:'#7bff5e' },
+  boost:{ mk:mkBolt, dur:5, label:'⚡ Sneaker Boost', color:'#ffc93c' },
 };
 
 /* ---------------- player ---------------- */
@@ -588,7 +630,7 @@ $('mute').onclick = ()=>{ AU.muted=!AU.muted; localStorage.setItem('hr-mute',AU.
    ============================================================ */
 let G = null;
 const playerMesh = mkPlayer(); scene.add(playerMesh); playerMesh.visible=false;
-const dogMeshes = [mkDog(), mkDog(), mkDog()]; dogMeshes.forEach(d=>{ scene.add(d); d.visible=false; });
+const dogMeshes = []; // Hood Run is a citywide race, not a chase.
 
 function newGame(){
   if(G) for(const s of G.segs) if(s.group){ scene.remove(s.group); disposeGroup(s.group); }
@@ -598,15 +640,15 @@ function newGame(){
     speed:SPEED0, stumbleT:0, invuln:0, shake:0,
     segs:[], segIdx:0, turned:false,
     obs:[], cash:[], pows:[], powState:{},
-    cashN:0, score:0, combo:0, comboT:0,
-    gap:5.5, dogLaneX:0, barkT:2, dieT:0, cause:'', slow:1,
-    god:false, time:0, nextPow: rand(260,420),
+    cashN:0, score:0, combo:0, comboT:0, comboStyled:false,
+    style:0, styleT:0, styleMax:1, meter:0, party:0,
+    dieT:0, cause:'', slow:1, district:-1,
+    god:false, time:0, nextPow: rand(180,320),
   };
   // first segment: long, gentle
   addSeg(true);
   while(pathEnd() < G.dist + 280) addSeg(false);
   playerMesh.visible=true;
-  dogMeshes.forEach(d=>d.visible=true);
   updateHud(true);
 }
 function pathEnd(){ const s=G.segs[G.segs.length-1]; return s.start+s.len; }
@@ -814,7 +856,8 @@ function pushCash(seg, d, lane, y){
   G.cash.push({ d, lane, y, mesh:m, taken:false, seg });
 }
 function pushPow(seg, d, lane){
-  const kind = Math.random()<0.5?'boombox':'kicks';
+  const kinds=['boombox','kicks','shield','boost'];
+  const kind = kinds[Math.floor(Math.random()*kinds.length)];
   const m=POW_DEFS[kind].mk();
   m.position.set(laneCenter(lane), 1.1, -(d-seg.start));
   seg.group.add(m);
@@ -901,34 +944,53 @@ addEventListener('touchend', e=>{
 addEventListener('contextmenu', e=>{ if(G&&G.state==='run') e.preventDefault(); });
 
 /* ---------------- flow ---------------- */
+function loadLife(){
+  try { return {...{dist:0,coins:0,runs:0,stylemax:1}, ...JSON.parse(localStorage.getItem('hr-life')||'{}')}; }
+  catch { return {dist:0,coins:0,runs:0,stylemax:1}; }
+}
+function saveLife(run){
+  const l=loadLife(); l.dist+=Math.floor(run.dist); l.coins+=run.cashN; l.runs++; l.stylemax=Math.max(l.stylemax,run.styleMax||1);
+  try { localStorage.setItem('hr-life',JSON.stringify(l)); } catch {}
+  return l;
+}
+function renderMissions(){
+  const l=loadLife();
+  const ms=[
+    ['Run 1,000m total',l.dist,1000],
+    ['Collect 150 coins',l.coins,150],
+    ['Reach a 5× style chain',l.stylemax,5],
+  ];
+  $('missionstrip').innerHTML=ms.map(([name,n,t])=>`<div class="mission ${n>=t?'done':''}"><span>${n>=t?'✓ ':''}${name}</span><strong>${Math.min(n,t).toLocaleString()} / ${t.toLocaleString()}</strong></div>`).join('');
+}
+
 function startRun(){
   audioInit(); AU.beatOn=true; if(AU.ctx){ AU.next=AU.ctx.currentTime+0.05; AU.step=0; if(AU.ctx.state==='suspended')AU.ctx.resume(); }
   $('menu').classList.remove('show'); $('over').classList.remove('show');
   $('hud').classList.add('show'); document.body.classList.add('ui');
   newGame();
-  showTip('Swipe / arrows — don\'t miss the turns!');
+  showTip('Read the arrows, chain clean moves, own the block!');
 }
 function pauseGame(){ if(G&&G.state==='run'){ G.state='paused'; $('paused').classList.add('show'); AU.beatOn=false; } }
 function resumeGame(){ if(G&&G.state==='paused'){ G.state='run'; $('paused').classList.remove('show'); AU.beatOn=true; if(AU.ctx)AU.next=AU.ctx.currentTime+0.05; } }
 document.addEventListener('visibilitychange', ()=>{ if(document.hidden && !window.__hrTest) pauseGame(); });
 
 const CAUSES = {
-  wall: ["Ate the brick wall. Shoulda turned.","Missed the turn — the block wins this one.","Ran outta road."],
-  caught: ["The strays caught you slippin'.","Dog pile. They got the chips.","Too slow — the pack ate good tonight."],
-  bags:["Tripped over the trash. Rookie move.","Garbage day won."],
+  generic: ["The city got the point this round.","Shake it off, legend — the next block is yours."],
+  wall: ["Missed the turn — read the arrows and run it back.","Ran outta road. The shortcut was the other way."],
+  bags:["Tripped over the bags. Shake it off.","Collection day changed the route."],
   hydrant:["Took a hydrant to the knees."],
   barrier:["Clotheslined by the road works."],
   scaffold:["Scaffolding says duck next time."],
   fence:["The fence said not today."],
   dumpster:["The dumpster won. It always does."],
-  car:["Hood slide? More like hood splat."],
+  car:["Double-parked. Classic city timing."],
 };
 function die(cause){
   if(G.god){ if(cause==='wall') G.turned=true; return; }
   if(G.state!=='run') return;
   G.state='dying'; G.dieT=0; G.cause=cause; G.slow=0.35; G.shake=0.5;
   AU.beatOn=false;
-  if(cause==='caught'){ sfx.bark(); setTimeout(()=>sfx.bark(),240); } else sfx.crash();
+  sfx.crash();
 }
 function finishDeath(){
   G.state='over';
@@ -938,11 +1000,12 @@ function finishDeath(){
   const nb = score>best;
   if(nb) localStorage.setItem('hr-best', score);
   if(G.dist>bestD) localStorage.setItem('hr-bestd', Math.floor(G.dist));
+  saveLife(G);
   $('ov-score').textContent=score.toLocaleString();
   $('ov-dist').textContent=Math.floor(G.dist)+'m';
-  $('ov-cash').textContent='$'+G.cashN;
+  $('ov-cash').textContent=G.cashN;
   $('newbest').style.display = nb?'block':'none';
-  $('over-cause').textContent = pick(CAUSES[G.cause]||CAUSES.caught);
+  $('over-cause').textContent = pick(CAUSES[G.cause]||CAUSES.generic);
   $('hud').classList.remove('show');
   $('over').classList.add('show');
 }
@@ -954,22 +1017,38 @@ function onTap(id, fn){
 onTap('play-btn', startRun);
 onTap('retry-btn', startRun);
 onTap('resume-btn', resumeGame);
+onTap('pause-btn', pauseGame);
 onTap('menu-btn', ()=>{ $('over').classList.remove('show'); $('menu').classList.add('show'); refreshBest(); });
 function refreshBest(){
   const b=+(localStorage.getItem('hr-best')||0), d=+(localStorage.getItem('hr-bestd')||0);
-  $('beststrip').innerHTML = b? `Block record: <b>${b.toLocaleString()}</b> &nbsp;·&nbsp; farthest run: <b>${d}m</b>` : 'First run — set the block record.';
+  $('beststrip').innerHTML = b? `Crosstown record: <b>${b.toLocaleString()}</b> &nbsp;·&nbsp; farthest run: <b>${d}m</b>` : 'First run — set the Crosstown record.';
+  renderMissions();
 }
 refreshBest();
 
 let tipT=null;
 function showTip(msg){ const el=$('tip'); el.textContent=msg; el.style.opacity=1; clearTimeout(tipT); tipT=setTimeout(()=>el.style.opacity=0, 2600); }
 
+function addStyle(label, amount=1, meter=0.12){
+  if(!G || G.state!=='run') return;
+  const gain=amount*(G.powState.kicks>0?2:1);
+  G.style=clamp(G.style+gain,0,9); G.styleT=5.5; G.styleMax=Math.max(G.styleMax,1+Math.floor(G.style));
+  G.meter=clamp(G.meter+meter,0,1);
+  const el=$('combo'); el.textContent=label; el.style.opacity=1; el.style.transform='translateX(-50%) scale(1.14)';
+  setTimeout(()=>{ el.style.opacity=0; el.style.transform='translateX(-50%) scale(1)'; },500);
+  if(G.meter>=1 && G.party<=0){ G.meter=0; G.party=PARTY_DUR; sfx.pow(); showTip('🎉 BLOCK PARTY — the city lights up!'); }
+}
+
 /* ---------------- HUD ---------------- */
 function updateHud(force){
   if(!G) return;
   $('hud-score').textContent = Math.floor(G.score).toLocaleString();
   $('hud-dist').textContent = Math.floor(G.dist)+'m';
-  $('hud-cash').textContent = '$'+G.cashN;
+  $('hud-cash').textContent = '● '+G.cashN;
+  const mult=1+Math.floor(G.style)+(G.party>0?2:0);
+  $('style-label').textContent=`STYLE ${mult}×`;
+  $('party-label').textContent=G.party>0?`BLOCK PARTY ${G.party.toFixed(1)}s`:'CROSSTOWN';
+  $('meter-fill').style.width=((G.party>0?1:G.meter)*100)+'%';
   let html='';
   for(const k in G.powState){
     const p=G.powState[k]; if(p<=0) continue;
@@ -982,10 +1061,9 @@ function updateHud(force){
 /* ---------------- core update ---------------- */
 function stumble(){
   if(G.invuln>0 || G.god) return;
-  G.stumbleT=0.8; G.invuln=1.4; G.gap-=3.5; G.shake=0.35;
-  sfx.stumble(); setTimeout(()=>sfx.bark(), 150);
+  G.stumbleT=0.8; G.invuln=1.4; G.shake=0.35; G.style=Math.max(0,G.style-2); G.styleT=0;
+  sfx.stumble();
   $('flash').style.opacity=1; setTimeout(()=>$('flash').style.opacity=0, 220);
-  if(G.gap < GAP_CAUGHT){ die('caught'); }
 }
 function playerX(){ return G.laneX; }
 
@@ -999,8 +1077,6 @@ function update(dt){
 
   if(G.state==='dying'){
     G.dieT += dt;
-    // dogs converge
-    G.gap = Math.max(0.4, G.gap - dt*9);
     playerMesh.userData.body.rotation.x = lerp(playerMesh.userData.body.rotation.x, G.cause==='wall'? 1.4 : -1.35, dt*6);
     playerMesh.position.y = Math.max(0.12, playerMesh.position.y - dt*2);
     if(G.dieT>1.15) finishDeath();
@@ -1010,10 +1086,20 @@ function update(dt){
 
   /* difficulty & speed */
   G.speed = Math.min(SPEED_MAX, SPEED0 + G.dist*0.008);
-  const speedNow = G.speed * (G.stumbleT>0? 0.55 : 1);
+  const speedNow = G.speed * (G.stumbleT>0? 0.55 : 1) * (G.powState.boost>0?1.3:1);
   G.stumbleT=Math.max(0,G.stumbleT-sdt);
   G.invuln=Math.max(0,G.invuln-sdt);
   G.shake=Math.max(0,G.shake-sdt*1.6);
+  G.party=Math.max(0,G.party-sdt);
+  if(G.styleT>0) G.styleT-=sdt;
+  else G.style=Math.max(0,G.style-sdt*0.7);
+
+  const districtIndex = G.dist<650?0:(G.dist<1300?1:2);
+  if(districtIndex!==G.district){
+    G.district=districtIndex; const d=DISTRICTS[districtIndex];
+    scene.background.setHex(d.bg); scene.fog.color.setHex(d.fog);
+    const tag=$('district'); tag.textContent=d.label; tag.style.opacity=1; setTimeout(()=>tag.style.opacity=0,2200);
+  }
 
   /* junction death check BEFORE moving */
   const s=G.segs[G.segIdx], jd=s.start+s.len;
@@ -1023,7 +1109,7 @@ function update(dt){
     return;
   }
   G.dist += speedNow*sdt;
-  G.score += speedNow*sdt * (G.powState.kicks>0?2:1);
+  G.score += speedNow*sdt * (1+Math.floor(G.style)+(G.party>0?2:0));
 
   /* advance segment */
   while(G.dist > G.segs[G.segIdx].start + G.segs[G.segIdx].len){
@@ -1068,16 +1154,18 @@ function update(dt){
       let cleared=false;
       if(o.clear==='jump') cleared = G.py > o.h;
       else if(o.clear==='slide') cleared = (G.sliding>0 && G.py<0.3) || (!o.strict && G.py>1.35);
-      if(cleared) continue;
+      if(G.powState.boost>0 && ['bags','hydrant','cone'].includes(o.kind)) cleared=true;
+      if(cleared){ o.done=true; addStyle(o.clear==='slide'?'PERFECT SLIDE':'PERFECT JUMP',1.2,0.14); continue; }
       o.done=true;
       if(o.stumble){ if(o.mesh){ o.mesh.rotation.z=1.2; o.mesh.position.y=0.1; } stumble(); }
+      else if(G.powState.shield>0){ G.powState.shield=0; G.invuln=1.2; G.style=Math.max(0,G.style-1); sfx.pow(); showTip('🛡 FRESH START — saved!'); }
       else die(o.kind);
       if(G.state!=='run') return;
     }
   }
 
   /* cash */
-  const magnet = G.powState.boombox>0;
+  const magnet = G.powState.boombox>0 || G.party>0;
   let got=0;
   for(const c of G.cash){
     if(c.taken) continue;
@@ -1092,13 +1180,12 @@ function update(dt){
   if(got){
     G.combo = (G.comboT>0)? G.combo+got : got;
     G.comboT=1.6;
-    const mult=G.powState.kicks>0?2:1;
-    G.cashN+=got*mult; G.score+=got*10*mult;
+    G.cashN+=got; G.score+=got*10*(1+Math.floor(G.style));
     sfx.cash(G.combo);
-    if(G.combo>=8){ const el=$('combo'); el.textContent='+$'+G.combo+' streak!'; el.style.opacity=1; el.style.transform='translateX(-50%) scale(1.15)';
-      setTimeout(()=>{ el.style.opacity=0; el.style.transform='translateX(-50%) scale(1)'; },500); }
+    if(G.combo>=6 && !G.comboStyled){ G.comboStyled=true; addStyle('CLEAN COIN LINE',1,0.12); }
   }
   G.comboT=Math.max(0,G.comboT-sdt);
+  if(G.comboT<=0){ G.combo=0; G.comboStyled=false; }
 
   /* powerup pickups */
   for(const p of G.pows){
@@ -1110,11 +1197,6 @@ function update(dt){
       sfx.pow(); showTip(POW_DEFS[p.kind].label+' !');
     }
   }
-
-  /* chaser */
-  G.gap = Math.min(GAP_MAX, G.gap + 0.45*sdt);
-  G.barkT -= sdt;
-  if(G.barkT<0){ if(G.gap<8){ sfx.bark(); } G.barkT = rand(2.5,5); }
 
   updateView(sdt);
   updateHud();
@@ -1155,23 +1237,6 @@ function updateView(sdt){
     if(G.invuln>0){ playerMesh.visible = (Math.floor(G.time*14)%2)===0; } else playerMesh.visible=true;
   }
 
-  /* dogs */
-  for(let i=0;i<dogMeshes.length;i++){
-    const dm=dogMeshes[i];
-    const dd = G.dist - G.gap - i*1.5;
-    const targetLX = G.laneX + (i-1)*0.8;
-    dm.userData.lx = lerp(dm.userData.lx??targetLX, targetLX, 1-Math.exp(-sdt*4));
-    worldPos(dd, clamp(dm.userData.lx,-3,3), 0, dPos);
-    dm.position.copy(dPos);
-    dm.rotation.y = playerAng;
-    const legs=dm.userData.legs, ph=G.time*16+i*1.7;
-    legs[0].rotation.x=Math.sin(ph)*0.9; legs[1].rotation.x=Math.sin(ph)*0.9;
-    legs[2].rotation.x=Math.sin(ph+Math.PI)*0.9; legs[3].rotation.x=Math.sin(ph+Math.PI)*0.9;
-    dm.userData.body.position.y=Math.abs(Math.sin(ph))*0.09;
-    if(G.state==='dying' && G.dieT>0.5){ dm.userData.body.rotation.x=-0.5; }
-    else dm.userData.body.rotation.x=0;
-  }
-
   /* spin pickups */
   for(const c of G.cash){ if(!c.taken && c.mesh.visible){ c.mesh.rotation.y += sdt*3.4; } }
   for(const p of G.pows){ if(!p.taken){ p.mesh.rotation.y += sdt*2; p.mesh.position.y = 1.1+Math.sin(G.time*3+p.d)*0.15; } }
@@ -1189,12 +1254,17 @@ function updateView(sdt){
   skyGroup.position.copy(camera.position);
 }
 
-/* ---------------- main loop ---------------- */
-let last=performance.now();
+/* ---------------- main loop: fixed simulation, independent rendering ---------------- */
+let last=performance.now(), accumulator=0;
 function frame(now){
   requestAnimationFrame(frame);
-  const dt=(now-last)/1000; last=now;
-  if(!document.hidden || window.__hrTest){ update(dt); }
+  const dt=Math.min((now-last)/1000,0.1); last=now;
+  if(!document.hidden || window.__hrTest){
+    accumulator+=dt;
+    const step=1/60;
+    let guard=0;
+    while(accumulator>=step && guard++<8){ update(step); accumulator-=step; }
+  }
   renderer.render(scene, camera);
 }
 requestAnimationFrame(frame);
@@ -1208,9 +1278,9 @@ window.__hr = {
   state(){
     if(!G) return { state:'menu' };
     const s=G.segs[G.segIdx];
-    return { state:G.state, dist:+G.dist.toFixed(1), score:Math.floor(G.score), cash:G.cashN,
+    return { state:G.state, dist:+G.dist.toFixed(1), score:Math.floor(G.score), coins:G.cashN,
       lane:G.lane, laneX:+G.laneX.toFixed(2), py:+G.py.toFixed(2), sliding:G.sliding>0,
-      gap:+G.gap.toFixed(2), speed:+G.speed.toFixed(1), segIdx:G.segIdx, segs:G.segs.length,
+      speed:+G.speed.toFixed(1), style:1+Math.floor(G.style), party:+G.party.toFixed(2), district:G.district, segIdx:G.segIdx, segs:G.segs.length,
       obs:G.obs.length, cashItems:G.cash.length, exit:s.exit, toJunction:+(s.start+s.len-G.dist).toFixed(1),
       turned:G.turned, cause:G.cause, pows:{...G.powState} };
   },
