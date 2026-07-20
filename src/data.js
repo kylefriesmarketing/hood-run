@@ -201,6 +201,16 @@ export const CRASH_LINES = {
   robot: ["Bonked by the delivery bot."], bball: ["Airballed."],
 };
 
+/* today's date key (local) and its deterministic Daily Challenge seed */
+export function dateKey(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+export function dailySeed(key = dateKey()) {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < key.length; i++) { h ^= key.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  return (h ^ 0x9e3779b9) >>> 0;
+}
+
 /* seeded LCG — all gameplay randomness comes through one of these */
 export function makeRng(seed) {
   let s = (seed >>> 0) || 1;

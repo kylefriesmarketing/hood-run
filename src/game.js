@@ -3,7 +3,7 @@
    style chain, Crosstown meter, difficulty, run lifecycle.
    No DOM, no THREE — pure logic + callbacks. */
 
-import { TUNE, LANE_W, HAZARDS, CALLOUTS, CRASH_LINES, DISTRICTS, makeRng, hash2 } from './data.js';
+import { TUNE, LANE_W, HAZARDS, CALLOUTS, CRASH_LINES, DISTRICTS, makeRng, hash2, dateKey, dailySeed } from './data.js';
 import { nextSegDescriptor, populateSegment, districtAt, phaseAt } from './segment-generator.js';
 import { checkCollisions, updateMovers } from './collisions.js';
 import { loadSave, commitSave } from './save.js';
@@ -13,17 +13,19 @@ export const STATES = { BOOT: 'boot', HOME: 'home', COUNTDOWN: 'countdown', RUNN
 let state = STATES.BOOT;
 export let G = null;
 
-const cb = { state: null, callout: null, hud: null, tutorial: null, district: null, results: null, mesh: null, meshSwap: null, prune: null, sfx: null };
+const cb = { state: null, callout: null, hud: null, tutorial: null, district: null, results: null, mesh: null, meshSwap: null, prune: null, sfx: null, fx: null };
+function fx(kind, data) { cb.fx && cb.fx(kind, data); }
 export function setCallbacks(c) { Object.assign(cb, c); }
 export function getState() { return state; }
 function setState(s) { state = s; window.__hrPlaying = (s === STATES.RUNNING || s === STATES.COUNTDOWN); cb.state && cb.state(s); }
 export function toHome() { setState(STATES.HOME); }
 
 /* ---------------- run lifecycle ---------------- */
-export function startRun(seed) {
+export function startRun(seed, daily) {
   initMissions();                          // idempotent: refills to 3 active
   if (G) for (const seg of G.segs) cb.prune && cb.prune(seg);   // clear the previous run's world
   const save = loadSave();
+  if (daily) seed = dailySeed();
   G = {
     seed: (seed >>> 0) || ((Date.now() ^ (Math.random() * 0xffffffff)) >>> 0),
     time: 0, dist: 0, speed: TUNE.speed0,
@@ -47,7 +49,7 @@ export function startRun(seed) {
     tutorial: !save.tutorialDone, tutStep: 0, tutDone: false,
     countdownT: 1.3,
     groupsSinceRecovery: 0, speedForValidation: 22,
-    lastRebase: 0, god: false,
+    lastRebase: 0, god: false, daily: !!daily,
   };
   genAhead();
   if (G.tutorial) placeTutorial();
@@ -75,10 +77,24 @@ function finishRun() {
   missionEvent('tokens', G.run.tokens);
   missionEvent('rundist', Math.floor(G.dist));
   missionEvent('nopow', Math.floor(Math.max(G.run.maxNopowT, G.run.nopowT)));
+  // Daily Challenge bookkeeping
+  let dailyBest = false, dailyToday = 0;
+  if (G.daily) {
+    const key = dateKey();
+    if (s.daily.date !== key) { // first daily of a new day
+      const prevKey = dateKey(new Date(Date.now() - 86400000));
+      s.daily.streak = (s.daily.date === prevKey) ? (s.daily.streak + 1) : 1;
+      s.daily.date = key; s.daily.best = 0; s.daily.playedToday = true;
+    }
+    s.daily.playedToday = true;
+    if (total > s.daily.best) { s.daily.best = total; dailyBest = true; }
+    dailyToday = s.daily.best;
+  }
   commitSave();
   cb.results && cb.results({
     total, newHigh, dist: Math.floor(G.dist), coins: G.run.coins, tokens: G.run.tokens,
     parts: { ...G.score }, styleMax: G.style.max, cause: crashLine(G.crashCause),
+    daily: G.daily, dailyBest, dailyToday, dailyStreak: s.daily.streak,
   });
 }
 export function totalScore() {
@@ -212,6 +228,7 @@ function addMeter(v) {
     missionEvent('party', 1);
     cb.callout && cb.callout(CALLOUTS.party, 'party');
     cb.sfx && cb.sfx('party');
+    fx('party');
   }
 }
 function styleReset() { G.style.level = 0; G.style.repeats = {}; }
@@ -269,6 +286,7 @@ function crash(cause, force) {
   G.crashCause = cause; G.dieT = 0; G.shake = 0.55;
   setState(STATES.CRASHED);
   cb.sfx && cb.sfx('crash');
+  fx('crash');
 }
 function stumble() {
   if (G.god || G.invuln > 0) return;
@@ -352,7 +370,7 @@ export function stepFixed(dt) {
     G.vy -= TUNE.gravity * dt; G.py += G.vy * dt;
     if (G.py <= 0) {
       G.py = 0; G.vy = 0;
-      cb.sfx && cb.sfx('land');
+      cb.sfx && cb.sfx('land'); fx('land');
       if (G.queueSlide) { G.sliding = TUNE.slideT * 0.7; G.queueSlide = false; G.slideStartD = G.dist; cb.sfx && cb.sfx('slide'); }
       else if (G.jumpBuf > 0) doJump();
     }
@@ -377,7 +395,7 @@ export function stepFixed(dt) {
     else if (ev.type === 'smash') { G.shake = Math.max(G.shake, 0.2); cb.sfx && cb.sfx('stumble'); }
     else if (ev.type === 'perfectJump') { G.run.pjump++; missionEvent('pjump', 1); addStyle('perfectJump'); }
     else if (ev.type === 'perfectSlide') { G.run.pslide++; missionEvent('pslide', 1); addStyle('perfectSlide'); }
-    else if (ev.type === 'nearMiss') { G.run.nearmiss++; missionEvent('nearmiss', 1); addStyle('nearMiss'); }
+    else if (ev.type === 'nearMiss') { G.run.nearmiss++; missionEvent('nearmiss', 1); addStyle('nearMiss'); fx('nearMiss', { lanes: ev.obs.lanes }); }
   }
 
   /* style decay */
@@ -411,6 +429,7 @@ function resolveSplit(seg) {
     G.run.shortcut++; missionEvent('shortcut', 1);
     G.score.route += TUNE.shortcutBonus;
     addStyle('shortcut');
+    fx('shortcut');
   }
 }
 
@@ -436,6 +455,7 @@ function collectPickups(dt) {
     G.run.coins += got;
     G.score.coins += got * TUNE.coinScore;
     cb.sfx && cb.sfx('coin', G.comboN);
+    fx('coin');
     if ((G.comboN % 6) === 0) addStyle('coinLine');
   }
   G.comboT = Math.max(0, (G.comboT || 0) - dt);
@@ -475,6 +495,7 @@ function collectPickups(dt) {
       p.taken = true; if (p.mesh) p.mesh.visible = false;
       G.pows[p.kind] = TUNE.powDur[p.kind];
       cb.sfx && cb.sfx('pow');
+      fx('pow', { kind: p.kind });
     }
   }
 }

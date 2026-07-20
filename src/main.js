@@ -10,6 +10,7 @@ import * as W from './world.js';
 import * as GAME from './game.js';
 import { STATES } from './game.js';
 import { buildRunner, runnerMesh, poseRunner, updateTrail } from './runner.js';
+import * as VFX from './vfx.js';
 import { initMissions } from './progression.js';
 import { attachInput, onAction } from './input.js';
 import { audioInit, audioResume, musicStart, musicStop, musicLayers, sfx } from './audio.js';
@@ -21,6 +22,8 @@ W.initWorld(canvas);
 initMissions();
 const save0 = loadSave();
 buildRunner(save0.unlocks.equipped);
+VFX.initVfx();
+VFX.setReducedMotion(save0.settings.reducedMotion);
 W.applyDistrict('block', true);
 
 let decorDensity = 1;                       // adaptive quality knob
@@ -111,7 +114,25 @@ GAME.setCallbacks({
   results: r => { UI.showResults(r); UI.refreshHome(); },
   mesh: meshCb, meshSwap: meshSwapCb, prune: pruneCb,
   sfx: (name, arg) => sfx[name] && sfx[name](arg),
+  fx: fxCb,
 });
+
+const fxPos = new THREE.Vector3();
+function fxCb(kind, data) {
+  const G = GAME.G; if (!G) return;
+  GAME.worldPos(G.dist, G.laneX, G.py, fxPos);
+  if (kind === 'coin') VFX.coinPop(fxPos.x, fxPos.y + 1.0, fxPos.z);
+  else if (kind === 'land') VFX.landDust(fxPos.x, fxPos.z);
+  else if (kind === 'crash') VFX.crashBurst(fxPos.x, fxPos.y, fxPos.z);
+  else if (kind === 'shortcut') VFX.shortcutStreak(fxPos.x, fxPos.y, fxPos.z);
+  else if (kind === 'party') VFX.partyConfetti(fxPos.x, fxPos.y, fxPos.z);
+  else if (kind === 'pow') VFX.powBurst(fxPos.x, fxPos.y, fxPos.z, colorFor(data && data.kind));
+  else if (kind === 'nearMiss') {
+    const side = (data && data.lanes && data.lanes[0] < 0) ? 1 : -1;
+    VFX.nearMissWhoosh(fxPos.x, fxPos.y, fxPos.z, side);
+  }
+}
+function colorFor(k) { return ({ boost: 0xffd23c, magnet: 0x3bd6c6, doublestyle: 0xff4f9a, shield: 0x7bff5e })[k] || 0xffffff; }
 
 function onState(s) {
   document.body.classList.toggle('playing', s === STATES.RUNNING || s === STATES.COUNTDOWN);
@@ -146,15 +167,15 @@ document.addEventListener('visibilitychange', () => {
 });
 
 /* ---------------- flows ---------------- */
-function startRunFlow(seed) {
+function startRunFlow(seed, daily) {
   audioInit(); audioResume();
   lastDistrict = 'block';
   W.applyDistrict('block', true);
-  GAME.startRun(seed);
+  GAME.startRun(seed, daily);
   sfx.alarm();
 }
 UI.initUI({
-  startRun: () => startRunFlow(),
+  startRun: (daily) => startRunFlow(undefined, daily),
   toHome: () => { GAME.toHome(); UI.refreshHome(); },
   resume: () => { GAME.resumeGame(); UI.hideScreens(); },
   pause: () => GAME.pauseGame(),
@@ -164,9 +185,34 @@ UI.initUI({
 });
 
 /* ---------------- view ---------------- */
-let camAng = 0, playerAng = 0, viewTime = 0, whistleT = 3;
+let camAng = 0, playerAng = 0, viewTime = 0, whistleT = 3, partyFxT = 0;
 const camPos = new THREE.Vector3(), lookAt = new THREE.Vector3(), pPos = new THREE.Vector3(), oPos = new THREE.Vector3();
 const dogCameo = W.mkDogCameo(); W.scene.add(dogCameo); dogCameo.visible = false;
+const speedLinesEl = document.getElementById('speed-lines');
+const debugEl = document.getElementById('debug');
+let debugOn = false, fpsAvg = 60;
+addEventListener('keydown', e => {
+  if (e.key === '`' || e.key === '~') { debugOn = !debugOn; debugEl.classList.toggle('show', debugOn); }
+});
+function updateDebug(dt) {
+  if (!debugOn) return;
+  fpsAvg = fpsAvg * 0.9 + (1 / Math.max(dt, 0.001)) * 0.1;
+  const G = GAME.G;
+  if (!G) { debugEl.textContent = `state ${GAME.getState()}\nfps  ${fpsAvg.toFixed(0)}`; return; }
+  const s = G.segs[G.segIdx];
+  const tier = (() => { let t = 0; for (const p of TUNE.phases) if (G.time >= p.t) t = p.tier; return t; })();
+  const obsAhead = G.obs.filter(o => !o.done && o.active && o.d > G.dist).slice(0, 4)
+    .map(o => `  ${o.kind}@${(o.d - G.dist).toFixed(0)} [${o.lanes ? o.lanes.join('') : 'mv'}] ${o.clear || (o.safe ? 'safe' : '×')}`).join('\n');
+  debugEl.textContent =
+    `seed  ${G.seed}${G.daily ? ' (DAILY)' : ''}\n` +
+    `fps   ${fpsAvg.toFixed(0)}   dpr ${W.renderer.getPixelRatio().toFixed(2)}\n` +
+    `dist  ${G.dist.toFixed(0)}m  spd ${G.speed.toFixed(1)}  tier ${tier}\n` +
+    `seg   #${s.index} ${s.alley ? 'ALLEY' : s.district} exit:${s.exit} ${(s.start + s.len - G.dist).toFixed(0)}m→jct\n` +
+    `pool  segs ${G.segs.length}  obs ${G.obs.length}  coins ${G.coins.length}\n` +
+    `chase gap ${G.gap.toFixed(1)}m  style×${GAME.multiplier()}  meter ${(G.meter * 100).toFixed(0)}%\n` +
+    `pows  ${Object.entries(G.pows).filter(([, v]) => v > 0).map(([k, v]) => k + ':' + v.toFixed(1)).join(' ') || '—'}\n` +
+    `next:\n${obsAhead || '  —'}`;
+}
 const officers = [W.mkOfficer(), W.mkOfficer(), W.mkOfficer()];
 for (const o of officers) { W.scene.add(o); o.visible = false; }
 
@@ -175,6 +221,7 @@ function updateView(dt) {
   viewTime += dt;
   if (!G) return;
   const rm = document.body.classList.contains('reduced-motion');
+  VFX.setReducedMotion(rm);
 
   const s = GAME.findSeg(G.dist);
   let targetAng = s.ang;
@@ -218,6 +265,13 @@ function updateView(dt) {
   /* decor animation + party pulse */
   W.animateSegments(G.segs, viewTime, G.partyT > 0 && !rm);
   document.body.classList.toggle('party', G.partyT > 0);
+
+  /* particles + continuous party confetti */
+  VFX.updateVfx(dt);
+  if (G.partyT > 0 && st === STATES.RUNNING && !rm) {
+    partyFxT -= dt;
+    if (partyFxT <= 0) { partyFxT = 0.28; VFX.partyConfetti(pPos.x, pPos.y, pPos.z); }
+  }
 
   /* the patrol — visible whenever the gap is short enough to be seen */
   const chasing = st === STATES.RUNNING || st === STATES.CRASHED;
@@ -263,6 +317,12 @@ function updateView(dt) {
   const fovKick = rm ? 0.25 : 0.7;
   W.camera.fov = 60 + Math.max(0, G.speed - TUNE.speed0) * fovKick; W.camera.updateProjectionMatrix();
 
+  /* speed lines ramp in past ~70% top speed (view-only) */
+  if (speedLinesEl) {
+    const frac = st === STATES.RUNNING ? Math.max(0, (G.speed - 22) / (TUNE.speedMax - 22)) : 0;
+    speedLinesEl.style.opacity = rm ? 0 : (frac * (G.pows.boost > 0 ? 1 : 0.7)).toFixed(2);
+  }
+
   W.trackView(pPos.x, pPos.z);
   W.updateLights(dt);
   watchDistrict();
@@ -298,6 +358,7 @@ function frame(now) {
     }
     updateView(dt);
   }
+  updateDebug(dt);
   W.renderer.render(W.scene, W.camera);
 
   /* adaptive quality: sustained slow frames step DPR + decor down */

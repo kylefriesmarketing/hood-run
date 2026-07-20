@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b3550"/><stop offset="1" stop-color="#1b2233"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffe98a"/><stop offset=".5" stop-color="#ffd23c"/>
+      <stop offset="1" stop-color="#ff8c42"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="url(#sky)"/>
+  <!-- road -->
+  <polygon points="176,512 336,512 300,300 212,300" fill="#33363e"/>
+  <rect x="248" y="316" width="16" height="34" rx="4" fill="#d8d8dc"/>
+  <rect x="245" y="368" width="22" height="44" rx="5" fill="#d8d8dc"/>
+  <rect x="241" y="430" width="30" height="58" rx="6" fill="#d8d8dc"/>
+  <!-- buildings -->
+  <rect x="70" y="150" width="120" height="200" rx="8" fill="#8a4a34"/>
+  <rect x="322" y="130" width="130" height="220" rx="8" fill="#5c6474"/>
+  <rect x="92" y="176" width="30" height="34" fill="#ffe9b0"/><rect x="140" y="176" width="30" height="34" fill="#cfe0ee"/>
+  <rect x="92" y="232" width="30" height="34" fill="#cfe0ee"/><rect x="140" y="232" width="30" height="34" fill="#ffe9b0"/>
+  <rect x="344" y="158" width="26" height="30" fill="#a8c4de"/><rect x="388" y="158" width="26" height="30" fill="#ffe9b0"/>
+  <rect x="344" y="208" width="26" height="30" fill="#ffe9b0"/><rect x="388" y="208" width="26" height="30" fill="#a8c4de"/>
+  <!-- runner -->
+  <g transform="translate(256,300)">
+    <ellipse cx="0" cy="118" rx="46" ry="12" fill="#000" opacity=".3"/>
+    <rect x="-30" y="10" width="60" height="66" rx="10" fill="#e8604c"/>
+    <rect x="-24" y="-34" width="48" height="46" rx="10" fill="#c79a6b"/>
+    <rect x="-26" y="-46" width="52" height="18" rx="6" fill="#23262e"/>
+    <rect x="-26" y="-52" width="52" height="8" rx="4" fill="#23262e"/>
+    <rect x="-40" y="20" width="16" height="40" rx="7" fill="#e8604c" transform="rotate(-18 -32 40)"/>
+    <rect x="24" y="20" width="16" height="40" rx="7" fill="#e8604c" transform="rotate(18 32 40)"/>
+    <rect x="-22" y="72" width="18" height="40" rx="7" fill="#2a3038"/>
+    <rect x="6" y="72" width="18" height="40" rx="7" fill="#2a3038"/>
+    <ellipse cx="-13" cy="112" rx="16" ry="8" fill="#f0f0f0"/>
+    <ellipse cx="15" cy="112" rx="16" ry="8" fill="#f0f0f0"/>
+    <circle cx="-34" cy="40" r="16" fill="#d8b878"/><text x="-34" y="47" font-family="Georgia" font-size="20" fill="#3a5a2a" text-anchor="middle" font-weight="bold">$</text>
+  </g>
+  <!-- title chip -->
+  <rect x="128" y="40" width="256" height="70" rx="16" fill="url(#gold)"/>
+  <text x="256" y="90" font-family="Arial Black, Arial" font-size="46" font-style="italic" font-weight="900" fill="#241303" text-anchor="middle">HOOD</text>
+</svg>

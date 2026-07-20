@@ -12,6 +12,7 @@ function freshSave() {
     lifetime: { dist: 0, coins: 0, runs: 0, pslide: 0, pjump: 0, nearmiss: 0, shortcut: 0, party: 0, hood: 0, tokens: 0 },
     settings: { music: 0.7, sfx: 0.8, reducedMotion: false, contrast: false, leftHud: false },
     missions: { active: [], progress: {}, done: [], cursor: 0 },
+    daily: { date: '', best: 0, playedToday: false, streak: 0 },
     unlocks: { owned: ['o_coral', 's_white', 'h_cap', 't_none', 'k_1', 'k_2', 'k_3', 'k_4'],
                equipped: { outfit: 'o_coral', shoes: 's_white', hat: 'h_cap', trail: 't_none', skin: 'k_1' } },
     tutorialDone: false,

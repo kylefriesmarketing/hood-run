@@ -26,19 +26,28 @@ Mobile: swipe in the four directions, tap to jump.
 
 ```
 index.html                shell, CSS, screen DOM
-src/data.js               ALL tuning + hazard/district/mission/cosmetic content
+src/data.js               ALL tuning + hazard/district/mission/cosmetic content + daily seed
 src/game.js               state machine, fixed-step (60 Hz) deterministic sim
 src/segment-generator.js  seeded route + content gen, per-segment forked rng
 src/collisions.js         lane-aware hitboxes, one-result rule, fairness validator
 src/world.js              scene, lighting, district palettes, canvas textures, props
 src/runner.js             Jay's mesh, cosmetics, poses, trail particles
+src/vfx.js                pooled particle juice (coin/land/crash/party/near-miss/pow)
 src/input.js              keyboard + swipe → abstract actions
 src/progression.js        missions, coins/tokens, cosmetics
 src/save.js               versioned save (v1), migration, corruption fallback
 src/audio.js              synth: 3-layer street track + pooled SFX
 src/ui.js                 screens/HUD only — owns no game rules
 src/main.js               wiring, view/camera, render loop, adaptive quality, __hr
+manifest.webmanifest, sw.js, icon.svg   installable offline PWA shell
 ```
+
+Extras beyond the core loop: **Daily Challenge** (one seeded city per day,
+shared by everyone, with a per-day best + day streak), **particle VFX** + speed
+lines (all reduced-motion aware), a **debug overlay** (§14 — toggle with the
+backtick `` ` `` key: seed, fps, tier, pool sizes, gap, upcoming hazards), a
+**lifetime-stats** panel on the Missions screen, and **PWA install / offline**
+support via a service worker.
 
 Key invariants:
 

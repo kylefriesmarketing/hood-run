@@ -1,19 +1,21 @@
 /* HOOD RUN — ui.js
    Screens + HUD. Owns the DOM only; game rules stay in game.js. */
 
-import { COSMETICS, POWERUPS, TUNE, DISTRICTS } from './data.js';
+import { COSMETICS, POWERUPS, TUNE, DISTRICTS, dateKey } from './data.js';
 import { loadSave, commitSave, resetSave } from './save.js';
 import { activeMissions, buyCosmetic, equipCosmetic, onToast } from './progression.js';
 import { setVolumes, sfx } from './audio.js';
 
 const $ = id => document.getElementById(id);
 let hooks = null;   // { startRun, toHome, resume, skipTutorial, rebuildRunner, replayTutorial }
+let lastWasDaily = false;
 
 export function initUI(h) {
   hooks = h;
   onToast(showToast);
   bindTap('play-btn', () => hooks.startRun());
-  bindTap('retry-btn', () => hooks.startRun());
+  bindTap('daily-btn', () => hooks.startRun(true));
+  bindTap('retry-btn', () => hooks.startRun(lastWasDaily));
   bindTap('home-btn', () => { showScreen('home'); hooks.toHome(); });
   bindTap('resume-btn', () => hooks.resume());
   bindTap('pause-home-btn', () => { showScreen('home'); hooks.toHome(); });
@@ -47,6 +49,11 @@ export function refreshHome() {
   const discovered = Math.min(3, 1 + Math.floor(s.lifetime.dist / 850));
   $('district-strip').textContent = ['block', 'market', 'downtown'].slice(0, discovered)
     .map(d => DISTRICTS[d].icon + ' ' + DISTRICTS[d].label).join('  ·  ');
+  const dailyDone = s.daily.date === dateKey();
+  const streak = s.daily.streak > 1 ? ` · 🔥${s.daily.streak}-day streak` : '';
+  $('daily-strip').innerHTML = dailyDone
+    ? `Today's Daily best: <b>${s.daily.best.toLocaleString()}</b>${streak} — same city for everyone today`
+    : `🗓️ Today's Daily Challenge is fresh — one seeded city, chase the best.`;
 }
 
 /* ---------------- HUD ---------------- */
@@ -117,6 +124,13 @@ function nextToast() {
 
 /* ---------------- results ---------------- */
 export function showResults(r) {
+  lastWasDaily = !!r.daily;
+  $('ov-title').textContent = r.daily ? 'DAILY DONE' : 'BUSTED!';
+  $('ov-daily').innerHTML = r.daily
+    ? (r.dailyBest ? `🗓️ New Daily best! <b>${r.dailyToday.toLocaleString()}</b>${r.dailyStreak > 1 ? ` · 🔥${r.dailyStreak}-day streak` : ''}`
+                   : `🗓️ Today's Daily best stands at <b>${r.dailyToday.toLocaleString()}</b>`)
+    : '';
+  $('ov-daily').style.display = r.daily ? 'block' : 'none';
   $('ov-total').textContent = r.total.toLocaleString();
   $('ov-cause').textContent = r.cause;
   $('ov-breakdown').innerHTML = [
@@ -144,6 +158,16 @@ function renderMissions() {
       <div class="m-num">${Math.floor(m.progress)} / ${m.target}</div></div>`;
   }).join('') || '<p class="muted">All missions complete — legend status.</p>';
   $('missions-done').textContent = `${s.missions.done.length} completed · 🔷 ${s.tokens} tokens`;
+  const lt = s.lifetime;
+  const stats = [
+    ['Runs', lt.runs], ['Total distance', (lt.dist || 0).toLocaleString() + 'm'],
+    ['Coins earned', (lt.coins || 0).toLocaleString()], ['Close calls', lt.nearmiss || 0],
+    ['Perfect jumps', lt.pjump || 0], ['Perfect slides', lt.pslide || 0],
+    ['Shortcuts taken', lt.shortcut || 0], ['Block Parties', lt.party || 0],
+    ['H-O-O-D spelled', lt.hood || 0],
+  ];
+  $('lifetime-stats').innerHTML = '<h3 class="lt-h">LIFETIME</h3>' +
+    stats.map(([k, v]) => `<div class="br"><span>${k}</span><b>${v}</b></div>`).join('');
 }
 
 /* ---------------- runner screen (cosmetics) ---------------- */
