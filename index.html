@@ -561,29 +561,6 @@ function mkBankFront(){
   return g;
 }
 
-/* ---------------- dogs ---------------- */
-function mkDog(){
-  const g=new THREE.Group();
-  const col=pick([0x6b6b74,0x6b4a30,0x2e2e36,0x8a7a5c]);
-  const body=new THREE.Group(); g.add(body); g.userData.body=body;
-  body.add(box(0.92,0.5,0.44,col,0,0.62,0));
-  body.add(box(0.44,0.4,0.4,col,0,0.82,0.52));                         // head
-  body.add(box(0.3,0.22,0.26,col===0x2e2e36?0x44444e:0x4a3826,0,0.7,0.78)); // snout
-  body.add(box(0.1,0.16,0.06,col,-0.14,1.05,0.5));
-  body.add(box(0.1,0.16,0.06,col, 0.14,1.05,0.5));
-  const tail=box(0.08,0.08,0.4,col,0,0.78,-0.6); tail.rotation.x=0.7; body.add(tail);
-  const eyes=new THREE.MeshBasicMaterial({color:0xffd0a0});
-  body.add(box(0.06,0.06,0.02,0xffd0a0,-0.11,0.9,0.73,eyes));
-  body.add(box(0.06,0.06,0.02,0xffd0a0, 0.11,0.9,0.73,eyes));
-  const legs=[];
-  for(const [x,z] of [[-0.3,0.32],[0.3,0.32],[-0.3,-0.32],[0.3,-0.32]]){
-    const l=new THREE.Group(); l.position.set(x,0.45,z); l.add(box(0.14,0.5,0.14,col,0,-0.22,0)); body.add(l); legs.push(l);
-  }
-  g.userData.legs=legs;
-  g.add(blobShadow(0.9));
-  return g;
-}
-
 /* ============================================================
    AUDIO — lo-fi beat + synth SFX
    ============================================================ */
