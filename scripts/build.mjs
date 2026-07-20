@@ -9,6 +9,7 @@ await mkdir(resolve(dist, 'client', 'lib'), { recursive: true });
 await mkdir(resolve(dist, 'server'), { recursive: true });
 await cp(resolve(root, 'index.html'), resolve(dist, 'client', 'index.html'));
 await cp(resolve(root, 'lib', 'three.module.js'), resolve(dist, 'client', 'lib', 'three.module.js'));
+await cp(resolve(root, 'src'), resolve(dist, 'client', 'src'), { recursive: true });   // modular gameplay
 await writeFile(resolve(dist, 'server', 'index.js'), `export default {
   async fetch(request, env) {
     return env.ASSETS.fetch(request);

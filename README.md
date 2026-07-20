@@ -1,37 +1,88 @@
-# Hood Run
+# HOOD RUN
 
-Hood Run is an original, three-lane endless city runner. Burst out of City Trust Bank, lose the pursuing officers, follow intersection arrows, dodge city hazards, collect coins, chain stylish moves, and fill the Crosstown meter to trigger Block Party.
+A browser endless runner built to `HOOD_RUN_DESIGN_BIBLE.md`. Jay bursts out of
+City Trust Bank with the score, and the whole city becomes the getaway: three
+lanes, real corner turns, alley shortcuts, a Style Chain, and Block Party mode —
+all while the (strictly cartoon, strictly nonviolent) patrol jogs after you.
 
-## Play locally
+> Architecture note: this is the **modular** build the bible's §14 asks for —
+> gameplay lives in `src/*.js`, not one giant inline script (§20 guardrail). An
+> earlier single-file build is preserved in git history.
 
-Serve this folder with any static web server, then open `index.html` through that server. The game uses JavaScript modules, so opening the file directly from disk is not supported by every browser.
+## Run it
 
-## Controls
+No build step. Serve the folder over HTTP (ES modules don't load from `file://`):
 
-- Left/Right Arrow or A/D: change lanes and turn at intersections
-- Up Arrow, W, or Space: jump
-- Down Arrow or S: slide
-- Escape or P: pause
-- Mobile: swipe in the matching direction
+```powershell
+# from the workspace root (serves everything, incl. /hood-run/)
+powershell -ExecutionPolicy Bypass -File serve.ps1 -Port 8402
+# then open http://localhost:8402/hood-run/index.html
+```
 
-## Included in this build
+Desktop: arrows/WASD (turn at corners with ⬅➡), Space/W jump, S slide, Esc/P pause.
+Mobile: swipe in the four directions, tap to jump.
 
-- Self-avoiding procedural 3D city blocks and turning streets
-- Opening bank escape and two-officer pursuit
-- Three visual districts: The Block, Market Mile, and Downtown Cut
-- Jump, slide, lane-change, turn, stumble, crash, and restart states
-- Coins, four power-ups, Style multiplier, and Block Party meter
-- Persistent high scores, lifetime stats, and three starter missions
-- Synthesized music and sound effects with a mute control
-- Desktop and touch input
-- Fixed-step gameplay simulation and lightweight object recycling
-- Built-in test/debug handle at `window.__hr`
-- Generation stress test covering 500 seeds and 90,000 blocks
+## Architecture (bible §14)
 
-## Test handle
+```
+index.html                shell, CSS, screen DOM
+src/data.js               ALL tuning + hazard/district/mission/cosmetic content
+src/game.js               state machine, fixed-step (60 Hz) deterministic sim
+src/segment-generator.js  seeded route + content gen, per-segment forked rng
+src/collisions.js         lane-aware hitboxes, one-result rule, fairness validator
+src/world.js              scene, lighting, district palettes, canvas textures, props
+src/runner.js             Jay's mesh, cosmetics, poses, trail particles
+src/input.js              keyboard + swipe → abstract actions
+src/progression.js        missions, coins/tokens, cosmetics
+src/save.js               versioned save (v1), migration, corruption fallback
+src/audio.js              synth: 3-layer street track + pooled SFX
+src/ui.js                 screens/HUD only — owns no game rules
+src/main.js               wiring, view/camera, render loop, adaptive quality, __hr
+```
 
-The browser console exposes `window.__hr` with helpers to start a run, send actions, advance the simulation, inspect state, and enable collision immunity. This is intended for repeatable smoke and soak checks.
+Key invariants:
 
-## Project guide
+- **Determinism**: every gameplay roll comes from `makeRng(hash2(runSeed, segIndex))`.
+  Same seed + same inputs ⇒ identical score (verified). `Math.random` is allowed
+  only in view/audio/UI code.
+- **Fixed step**: sim runs at 60 Hz via an accumulator; rendering never changes
+  game speed. `window.__hrManual` (set by `__hr.tick`) detaches the loop for tests.
+- **Split segments** build BOTH street and alley variants up front (dormant
+  alley), so route choice never perturbs the rng stream.
+- **Origin rebase** every ~420 m keeps float coords small on long runs.
+- **One collision result** per step: clear / shield save / stumble / crash.
+  Stumbles close the patrol `gap`; gap < 2 m ⇒ caught.
 
-The full product direction, expansion plan, acceptance criteria, and content rules live in `HOOD_RUN_DESIGN_BIBLE.md`.
+## Test it
+
+Open the game, then in the console:
+
+```js
+__hrTest = true                    // let the sim run in a hidden tab
+__hr.start(12345); __hr.skipTut()  // seeded run
+__hr.tick(1/60, 600)               // step the sim manually
+__hr.state()                       // full sim snapshot
+__hr.obsAhead(5)                   // upcoming hazards
+__hr.god(true)                     // no-death soak mode
+__hr.save() / __hr.resetSave()
+__hr.gl()                          // { scene, camera, renderer, THREE }
+```
+
+Acceptance battery this build passed: 100-seed × 40 s god soaks (0 errors,
+bounded memory), 10-minute single run (16.6 km, arrays stay pruned), determinism
+fingerprint, tutorial completion, shield/stumble/caught paths, mission
+completion + rotation, cosmetics buy/equip, save round-trip + corrupted-JSON
+recovery, single-award of run results, restart leak check, input mashing,
+320×568 HUD fit.
+
+## Tune it
+
+Everything numeric lives in `src/data.js` (`TUNE`, `HAZARDS`, `DISTRICTS`,
+`MISSIONS`, `COSMETICS`). Difficulty phases are `TUNE.phases`; pursuit feel is
+`TUNE.gap*`; style/meter economy is `TUNE.styleGain` / `meterGain`.
+
+## Deploy
+
+Fully static — push the folder to any static host (GitHub Pages: repo →
+Settings → Pages → main). `lib/three.module.js` (r160) ships locally; there are
+no external requests. `npm run build` mirrors the runtime files into `dist/`.
