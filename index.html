@@ -677,6 +677,42 @@ function newGame(){
 function pathEnd(){ const s=G.segs[G.segs.length-1]; return s.start+s.len; }
 
 /* ---------------- path & segment construction ---------------- */
+const CITY_RESERVE_HALF=18, NEXT_RESERVE_LEN=86;
+function streetFootprint(ox,oz,dx,dz,len,half=CITY_RESERVE_HALF){
+  const ex=ox+dx*len, ez=oz+dz*len;
+  return { minX:Math.min(ox,ex)-half, maxX:Math.max(ox,ex)+half,
+           minZ:Math.min(oz,ez)-half, maxZ:Math.max(oz,ez)+half };
+}
+function footprintsOverlap(a,b){
+  return a.minX<b.maxX && a.maxX>b.minX && a.minZ<b.maxZ && a.maxZ>b.minZ;
+}
+function exitDirection(seg,exit){
+  const ang=seg.ang+(exit==='L'?Math.PI/2:exit==='R'?-Math.PI/2:0);
+  return { ang, dx:-Math.sin(ang), dz:-Math.cos(ang) };
+}
+function exitKeepsCityClear(seg,exit){
+  const n=exitDirection(seg,exit), sx=seg.ox+seg.dx*seg.len, sz=seg.oz+seg.dz*seg.len;
+  const reserved=streetFootprint(sx,sz,n.dx,n.dz,NEXT_RESERVE_LEN);
+  // The candidate begins at this segment's far intersection. Older non-adjacent
+  // block reservations may not overlap it; this prevents roads from folding
+  // back through buildings that were generated on an earlier block.
+  for(const old of G.segs){
+    if(footprintsOverlap(reserved,streetFootprint(old.ox,old.oz,old.dx,old.dz,old.len))) return false;
+  }
+  return true;
+}
+function chooseClearExit(seg,prev,first){
+  if(first) return 'S'; // clean, readable bank getaway launch
+  const r=Math.random();
+  let choices;
+  // Grow the route toward the far side of the city. East/west streets may
+  // continue or turn north, but never curl south into completed blocks.
+  if(seg.dx>.5) choices=r<.72?['L','S']:['S','L'];
+  else if(seg.dx<-.5) choices=r<.72?['R','S']:['S','R'];
+  else choices=r<.4?['L','S','R']:r<.8?['R','S','L']:['S','L','R'];
+  return choices.find(exit=>exitKeepsCityClear(seg,exit))||'S';
+}
+
 function addSeg(first){
   const prev = G.segs[G.segs.length-1];
   let ang, ox, oz, start;
@@ -688,17 +724,8 @@ function addSeg(first){
   }
   const dx=-Math.sin(ang), dz=-Math.cos(ang);
   const len = first? 90 : rand(48, 80);
-  // choose exit: avoid two same turns in a row twisting into a tight loop
-  let exit;
-  const r=Math.random();
-  if(!first && r<0.16 && G.segs.length>2) exit='S';
-  else {
-    const lastTurn = prev? prev.exit : null;
-    if(lastTurn==='L') exit = Math.random()<0.62?'R':'L';
-    else if(lastTurn==='R') exit = Math.random()<0.62?'L':'R';
-    else exit = Math.random()<0.5?'L':'R';
-  }
-  const seg = { ang, ox, oz, dx, dz, cos:Math.cos(ang), sin:Math.sin(ang), len, start, exit, index:G.segs.length, group:null };
+  const seg = { ang, ox, oz, dx, dz, cos:Math.cos(ang), sin:Math.sin(ang), len, start, exit:'S', index:G.segs.length, group:null };
+  seg.exit=chooseClearExit(seg,prev,first);
   buildSegment(seg, first);
   populateSegment(seg, first);
   G.segs.push(seg);
@@ -1334,6 +1361,15 @@ window.__hr = {
       turned:G.turned, cause:G.cause, pows:{...G.powState} };
   },
   obsAhead(n=5){ if(!G)return[]; return G.obs.filter(o=>!o.done&&o.d>G.dist).slice(0,n).map(o=>({kind:o.kind,d:+(o.d-G.dist).toFixed(1),lanes:o.lanes,clear:o.clear})); },
+  layoutCheck(){
+    if(!G)return{ok:true,segments:0};
+    for(let i=0;i<G.segs.length;i++) for(let j=0;j<i-1;j++){
+      const a=G.segs[i],b=G.segs[j];
+      if(footprintsOverlap(streetFootprint(a.ox,a.oz,a.dx,a.dz,a.len),streetFootprint(b.ox,b.oz,b.dx,b.dz,b.len)))
+        return {ok:false,a:a.index,b:b.index};
+    }
+    return {ok:true,segments:G.segs.length};
+  },
   G(){ return G; },
   gl(){ return { scene, camera, renderer, THREE }; },
 };

@@ -16,7 +16,7 @@ Serve this folder with any static web server, then open `index.html` through tha
 
 ## Included in this build
 
-- Procedural 3D city blocks and turning streets
+- Self-avoiding procedural 3D city blocks and turning streets
 - Opening bank escape and two-officer pursuit
 - Three visual districts: The Block, Market Mile, and Downtown Cut
 - Jump, slide, lane-change, turn, stumble, crash, and restart states
@@ -26,6 +26,7 @@ Serve this folder with any static web server, then open `index.html` through tha
 - Desktop and touch input
 - Fixed-step gameplay simulation and lightweight object recycling
 - Built-in test/debug handle at `window.__hr`
+- Generation stress test covering 500 seeds and 90,000 blocks
 
 ## Test handle
 
