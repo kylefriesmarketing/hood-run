@@ -1,6 +1,6 @@
 # Hood Run
 
-Hood Run is an original, three-lane endless city runner. Sprint through a procedural neighborhood, follow intersection arrows, dodge city hazards, collect coins, chain stylish moves, and fill the Crosstown meter to trigger Block Party.
+Hood Run is an original, three-lane endless city runner. Burst out of City Trust Bank, lose the pursuing officers, follow intersection arrows, dodge city hazards, collect coins, chain stylish moves, and fill the Crosstown meter to trigger Block Party.
 
 ## Play locally
 
@@ -17,6 +17,7 @@ Serve this folder with any static web server, then open `index.html` through tha
 ## Included in this build
 
 - Procedural 3D city blocks and turning streets
+- Opening bank escape and two-officer pursuit
 - Three visual districts: The Block, Market Mile, and Downtown Cut
 - Jump, slide, lane-change, turn, stumble, crash, and restart states
 - Coins, four power-ups, Style multiplier, and Block Party meter
@@ -33,4 +34,3 @@ The browser console exposes `window.__hr` with helpers to start a run, send acti
 ## Project guide
 
 The full product direction, expansion plan, acceptance criteria, and content rules live in `HOOD_RUN_DESIGN_BIBLE.md`.
-

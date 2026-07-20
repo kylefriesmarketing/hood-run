@@ -40,18 +40,18 @@ On first load, a player can:
 
 ## One-sentence pitch
 
-**Sprint through a city that remixes itself block by block, chaining stylish moves, neighborhood shortcuts, and near misses to become the fastest legend on the block.**
+**Burst out of a midnight bank score and sprint through a city that remixes itself block by block, chaining stylish moves and near misses while patrol officers close in.**
 
 ## Player fantasy
 
-The player is not fleeing police, committing crimes, or escaping a monster. They are participating in **The Crosstown Dash**, an unofficial citywide running challenge organized through flyers, group chats, and community rivalry. The fantasy is athletic flow: reading the street, finding rhythm, taking daring shortcuts, and turning familiar city spaces into a playground.
+The run opens as the player escapes **City Trust Bank** with a stylized money bag and the alarm sounding. Uniformed patrol officers give chase on foot. The tone is heightened arcade fiction rather than realistic crime drama: no weapons, hostages, injuries, or instructions for committing real crimes. The fantasy remains athletic flow—reading the street, finding rhythm, taking daring shortcuts, and turning the whole city into an escape route.
 
 ## Tone
 
 - Bright, playful, kinetic, warm, witty, and aspirational.
 - The neighborhood should feel inhabited and cared for.
 - Humor comes from timing, signage, visual surprises, and exaggerated obstacles.
-- Avoid poverty tourism, gang stereotypes, racial caricatures, weapons, drugs, police chases, and treating residents as scenery to ridicule.
+- Avoid poverty tourism, gang stereotypes, racial caricatures, weapons, drugs, police brutality, and treating residents as scenery to ridicule. The pursuit stays playful and nonviolent.
 - Graffiti appears as colorful murals and commissioned street art, not shorthand for danger.
 
 ## The five design pillars
@@ -307,7 +307,7 @@ District changes affect presentation and pattern pools, not fundamental controls
 ## Launch runner
 
 **Name:** Jay  
-**Role:** A quick, optimistic neighborhood regular joining the Crosstown Dash.  
+**Role:** A quick, confident getaway runner carrying the City Trust score.
 **Design:** Highly readable silhouette, colorful jacket or hoodie, running shoes, small cross-body bag, expressive but efficient animation.  
 **Personality:** Competitive, friendly, amused by the city’s chaos.
 
@@ -797,7 +797,7 @@ Hood Run is done for version 1 when:
 # 20. GUARDRAILS: WHAT NOT TO BUILD
 
 - Do not copy Temple Run maps, characters, UI, audio, logo treatment, narrative, or exact obstacle sequences.
-- Do not center the premise on police pursuit, gangs, guns, drugs, theft, or urban misery.
+- Keep the bank escape and police pursuit stylized, nonviolent, and clearly fictional; do not add guns, hostages, police brutality, or real-world crime instructions.
 - Do not add multiplayer, accounts, a backend, ads, purchases, loot boxes, or live services to version 1.
 - Do not use procedural generation that can create unverified impossible patterns.
 - Do not make visuals so detailed that mobile readability or performance suffers.
@@ -820,4 +820,3 @@ Begin with the smallest complete playable loop. Test it. Then add one system at 
 6. Update the README and checklist when behavior or architecture changes.
 
 When a choice is not specified, choose the option that best supports responsiveness, readability, fairness, warmth, and replayability. The final game should feel like an affectionate celebration of a living city neighborhood and a runner who knows how to turn every block into momentum.
-

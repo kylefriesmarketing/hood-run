@@ -33,6 +33,11 @@
   #meter{ height:10px; border-radius:99px; overflow:hidden; border:1px solid rgba(255,255,255,.2); background:rgba(10,6,20,.72); box-shadow:0 3px 12px rgba(0,0,0,.35); }
   #meter-fill{ height:100%; width:0; border-radius:inherit; background:linear-gradient(90deg,var(--cyan),var(--pink),var(--gold)); transition:width .12s linear; }
   #pause-btn{ position:fixed; right:14px; bottom:max(14px, env(safe-area-inset-bottom)); z-index:7; pointer-events:auto; width:44px; height:44px; border-radius:12px; border:1px solid rgba(255,255,255,.18); background:rgba(10,6,20,.62); color:#fff; font-size:18px; cursor:pointer; }
+  #heist-intro{ position:fixed; left:50%; top:22%; transform:translateX(-50%); z-index:8; width:min(520px,88vw); text-align:center; pointer-events:none; opacity:0; transition:opacity .18s; }
+  #heist-intro.show{ opacity:1; }
+  #heist-kicker{ color:var(--gold); font-size:13px; font-weight:900; letter-spacing:4px; text-transform:uppercase; text-shadow:0 2px 7px #000; }
+  #heist-title{ color:#fff; font-size:clamp(34px,8vw,64px); font-weight:1000; font-style:italic; letter-spacing:-2px; line-height:1; text-shadow:0 5px 0 #12081f,0 0 24px rgba(255,79,106,.55); }
+  #heist-line{ margin-top:7px; color:#dcd3f5; font-size:15px; font-weight:800; text-shadow:0 2px 5px #000; }
 
   /* ---------- Overlays ---------- */
   .overlay{ position:fixed; inset:0; display:none; align-items:center; justify-content:center; z-index:10;
@@ -103,12 +108,17 @@
 <div id="combo"></div>
 <div id="tip"></div>
 <div id="district"></div>
+<div id="heist-intro" aria-live="polite">
+  <div id="heist-kicker">City Trust Bank · 11:47 PM</div>
+  <div id="heist-title">THE ALARM TRIPS</div>
+  <div id="heist-line">You got the bag. Now get across town.</div>
+</div>
 
 <div id="menu" class="overlay show">
   <div class="card">
     <div class="title">HOOD<br>RUN</div>
-    <div class="subtitle">own every block</div>
-    <div class="tagline">The Crosstown Dash is live. Read the street, find your rhythm,<br>and turn the whole city into your playground.</div>
+    <div class="subtitle">the score of the night</div>
+    <div class="tagline">One bank. One bag. Every patrol in the city behind you.<br>Hit the street and don’t look back.</div>
     <button class="btn" id="play-btn">▶ &nbsp;RUN</button>
     <div class="controls">
       <b>⬅ ➡</b><span>switch lanes · turn corners</span>
@@ -123,7 +133,7 @@
 
 <div id="over" class="overlay">
   <div class="card">
-    <div class="over-title">NICE RUN</div>
+    <div class="over-title">BUSTED</div>
     <div id="over-cause"></div>
     <div class="results">
       <div class="res"><div class="v" id="ov-score">0</div><div class="l">Score</div></div>
@@ -512,7 +522,42 @@ function mkPlayer(){
     l.add(box(0.26,0.14,0.4,0xf0f0f0,0,-0.72,0.06)); body.add(l); return l; };
   g.userData.armL=mkArm(-1); g.userData.armR=mkArm(1);
   g.userData.legL=mkLeg(-1); g.userData.legR=mkLeg(1);
+  const bag=new THREE.Group();
+  bag.add(box(0.48,0.5,0.3,0x27222d,0,-0.05,0));
+  const handle=new THREE.Mesh(new THREE.TorusGeometry(0.18,0.035,6,10,Math.PI),cmat(0x17131d)); handle.rotation.z=Math.PI; handle.position.y=0.22; bag.add(handle);
+  const mark=new THREE.Mesh(new THREE.CircleGeometry(0.1,10),new THREE.MeshBasicMaterial({color:0xffc93c})); mark.rotation.y=Math.PI/2; mark.position.x=0.245; bag.add(mark);
+  bag.position.set(0.58,0.72,-0.04); body.add(bag); g.userData.bag=bag;
   g.add(blobShadow(1.05));
+  return g;
+}
+
+function mkCop(){
+  const g=new THREE.Group(), body=new THREE.Group(); g.add(body); g.userData.body=body;
+  const skin=pick([0x8d5a3b,0x6b4226,0xc79a6b,0xa06a44]);
+  body.add(box(0.72,0.76,0.44,0x203a63,0,1.08,0));
+  body.add(box(0.5,0.32,0.2,0x182a49,0,0.76,0));
+  body.add(box(0.42,0.42,0.42,skin,0,1.72,0));
+  body.add(box(0.5,0.14,0.48,0x152440,0,1.95,0));
+  body.add(box(0.48,0.05,0.25,0x152440,0,1.89,0.28));
+  body.add(box(0.12,0.15,0.035,0xffd24a,0.18,1.22,0.23,new THREE.MeshBasicMaterial({color:0xffd24a})));
+  const mkArm=s=>{ const a=new THREE.Group(); a.position.set(0.44*s,1.4,0); a.add(box(0.2,0.66,0.2,0x203a63,0,-0.3,0)); a.add(box(0.16,0.16,0.16,skin,0,-0.68,0)); body.add(a); return a; };
+  const mkLeg=s=>{ const l=new THREE.Group(); l.position.set(0.18*s,0.78,0); l.add(box(0.24,0.7,0.26,0x152440,0,-0.34,0)); l.add(box(0.28,0.14,0.42,0x11131a,0,-0.72,0.06)); body.add(l); return l; };
+  g.userData.armL=mkArm(-1); g.userData.armR=mkArm(1); g.userData.legL=mkLeg(-1); g.userData.legR=mkLeg(1);
+  const red=box(0.11,0.08,0.11,0xff3344,-0.16,2.08,0,new THREE.MeshBasicMaterial({color:0xff3344}));
+  const blue=box(0.11,0.08,0.11,0x3388ff,0.16,2.08,0,new THREE.MeshBasicMaterial({color:0x3388ff})); body.add(red,blue); g.userData.red=red; g.userData.blue=blue;
+  g.add(blobShadow(1)); return g;
+}
+
+function mkBankFront(){
+  const g=new THREE.Group();
+  g.add(box(16,11,5,0x6a7180,0,5.5,3.8));
+  for(const x of [-5.6,-3.8,3.8,5.6]) g.add(box(0.5,7.4,0.55,0xd8d2bf,x,3.7,0.95));
+  g.add(box(13.2,0.65,0.8,0xd8d2bf,0,7.5,0.82));
+  const signTex=tex(512,128,(c,w,h)=>{ c.fillStyle='#17243d'; c.fillRect(0,0,w,h); c.strokeStyle='#ffc93c'; c.lineWidth=8; c.strokeRect(7,7,w-14,h-14); c.fillStyle='#fff4c2'; c.font='900 54px Arial'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('CITY TRUST BANK',w/2,h/2+2); });
+  const sign=new THREE.Mesh(new THREE.PlaneGeometry(8.6,2.15),new THREE.MeshBasicMaterial({map:signTex})); sign.position.set(0,8.9,0.65); g.add(sign);
+  const glass=new THREE.MeshBasicMaterial({color:0x18263c,transparent:true,opacity:0.82});
+  g.add(box(2.1,4.3,0.15,0x18263c,-1.1,2.15,0.65,glass)); g.add(box(2.1,4.3,0.15,0x18263c,1.1,2.15,0.65,glass));
+  g.add(box(0.12,4.3,0.24,0xd8d2bf,0,2.15,0.55));
   return g;
 }
 
@@ -613,13 +658,12 @@ const sfx = {
   pow(){ [523,659,784,1046].forEach((f,i)=>setTimeout(()=>blip(f,0.16,'square',0.16),i*70)); },
   stumble(){ blip(140,0.2,'sine',0.4,-70); if(AU.ctx) noiseBurst(AU.ctx.currentTime,0.14,900,'lowpass',0.3); },
   crash(){ blip(90,0.5,'sine',0.55,-50); if(AU.ctx) noiseBurst(AU.ctx.currentTime,0.4,600,'lowpass',0.5); },
-  bark(){ if(!AU.ctx)return; const c=AU.ctx;
-    for(const dt of [0,0.16]){ const t=c.currentTime+dt;
-      const o=c.createOscillator(),g=c.createGain(),f=c.createBiquadFilter();
-      o.type='sawtooth'; o.frequency.setValueAtTime(340,t); o.frequency.exponentialRampToValueAtTime(150,t+0.1);
-      f.type='bandpass'; f.frequency.value=700; f.Q.value=2;
-      g.gain.setValueAtTime(0.28,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.12);
-      o.connect(f); f.connect(g); g.connect(AU.master); o.start(t); o.stop(t+0.13); } },
+  siren(){ if(!AU.ctx)return; const c=AU.ctx,t=c.currentTime;
+    for(const [f0,f1,delay] of [[620,920,0],[920,620,.28]]){ const o=c.createOscillator(),g=c.createGain(); o.type='sawtooth';
+      o.frequency.setValueAtTime(f0,t+delay); o.frequency.linearRampToValueAtTime(f1,t+delay+.26);
+      g.gain.setValueAtTime(.16,t+delay); g.gain.exponentialRampToValueAtTime(.001,t+delay+.3);
+      o.connect(g); g.connect(AU.master); o.start(t+delay); o.stop(t+delay+.31); } },
+  alarm(){ if(!AU.ctx)return; for(let i=0;i<4;i++) setTimeout(()=>blip(i%2?760:980,.18,'square',.2),i*190); },
 };
 $('mute').textContent = AU.muted?'🔇':'🔊';
 $('mute').onclick = ()=>{ AU.muted=!AU.muted; localStorage.setItem('hr-mute',AU.muted?'1':'0');
@@ -630,25 +674,27 @@ $('mute').onclick = ()=>{ AU.muted=!AU.muted; localStorage.setItem('hr-mute',AU.
    ============================================================ */
 let G = null;
 const playerMesh = mkPlayer(); scene.add(playerMesh); playerMesh.visible=false;
-const dogMeshes = []; // Hood Run is a citywide race, not a chase.
+const copMeshes = [mkCop(),mkCop()]; copMeshes.forEach(c=>{ scene.add(c); c.visible=false; });
 
 function newGame(){
   if(G) for(const s of G.segs) if(s.group){ scene.remove(s.group); disposeGroup(s.group); }
   G = {
-    state:'run', dist:0, laneX:0, lane:0, py:0, vy:0,
+    state:'intro', introT:0, dist:0, laneX:0, lane:0, py:0, vy:0,
     sliding:0, queueSlide:false, runPhase:0,
     speed:SPEED0, stumbleT:0, invuln:0, shake:0,
     segs:[], segIdx:0, turned:false,
     obs:[], cash:[], pows:[], powState:{},
     cashN:0, score:0, combo:0, comboT:0, comboStyled:false,
     style:0, styleT:0, styleMax:1, meter:0, party:0,
-    dieT:0, cause:'', slow:1, district:-1,
+    gap:5.6, sirenT:1.1, dieT:0, cause:'', slow:1, district:-1,
     god:false, time:0, nextPow: rand(180,320),
   };
   // first segment: long, gentle
   addSeg(true);
   while(pathEnd() < G.dist + 280) addSeg(false);
   playerMesh.visible=true;
+  copMeshes.forEach(c=>c.visible=true);
+  $('heist-intro').classList.add('show');
   updateHud(true);
 }
 function pathEnd(){ const s=G.segs[G.segs.length-1]; return s.start+s.len; }
@@ -717,7 +763,7 @@ function buildSegment(seg, first){
   g.add(patch);
   if(first){
     const p0 = patch.clone(); p0.position.set(0,0.012,0); g.add(p0);
-    const backWall = box(26,14,10,0x2a2033,0,7,9.2); g.add(backWall);
+    const bank=mkBankFront(); bank.position.set(0,0,7.7); g.add(bank);
   }
 
   // sidewalks
@@ -730,9 +776,10 @@ function buildSegment(seg, first){
 
   // buildings & side dressing
   for(const side of [-1,1]){
-    let d = 5;
-    while(d < L-6){
-      const w = rand(9,15);
+    const cornerClear=15;
+    let d = cornerClear;
+    while(d < L-cornerClear-7){
+      const w = Math.min(rand(9,15),L-cornerClear-d);
       const roll = Math.random();
       if(roll<0.12 && d+8<L-6){ // graffiti wall lot
         const wall=new THREE.Mesh(new THREE.PlaneGeometry(8,3.2), new THREE.MeshLambertMaterial({ map:pick(GRAF_TEXES) }));
@@ -754,9 +801,9 @@ function buildSegment(seg, first){
         bld.scale.set(w,h,depth);
         bld.position.set(side*(WALL_X+depth/2), h/2, -(d+w/2));
         bld.rotation.y = side>0 ? -Math.PI/2 : Math.PI/2;
-        // after rotation the box's local +z points toward the road; but scale was set in
-        // pre-rotation axes — swap w/depth so the street-facing width is w:
-        bld.scale.set(depth,h,w);
+        // After rotation, local Z becomes cross-street depth and local X becomes
+        // frontage along the block. Keeping (w,h,depth) guarantees the near face
+        // stays behind WALL_X instead of rotating the frontage into the street.
         g.add(bld);
         if(Math.random()<0.3){ // storefront awning
           const awLen=Math.min(w-4,3.6);
@@ -769,10 +816,10 @@ function buildSegment(seg, first){
       }
     }
     // streetlights + sidewalk props
-    for(let d2=10+ (side>0?8:0); d2<L-8; d2+=17){
+    for(let d2=cornerClear+ (side>0?7:0); d2<L-cornerClear; d2+=17){
       const sl=mkStreetlight(); sl.position.set(side*(HALF+0.9),0.24,-d2); sl.rotation.y=side>0?0:Math.PI; g.add(sl);
     }
-    for(let d2=rand(8,20); d2<L-8; d2+=rand(14,26)){
+    for(let d2=rand(cornerClear,cornerClear+8); d2<L-cornerClear; d2+=rand(14,26)){
       const roll=Math.random();
       if(roll<0.35){ const tc=mkTrashCanSide(); tc.position.set(side*(HALF+1.6),0.24,-d2); g.add(tc); }
       else if(roll<0.5){ const hy=mkHydrant(); hy.position.set(side*(HALF+0.9),0.24,-d2); g.add(hy); }
@@ -968,13 +1015,14 @@ function startRun(){
   $('menu').classList.remove('show'); $('over').classList.remove('show');
   $('hud').classList.add('show'); document.body.classList.add('ui');
   newGame();
-  showTip('Read the arrows, chain clean moves, own the block!');
+  sfx.alarm();
 }
 function pauseGame(){ if(G&&G.state==='run'){ G.state='paused'; $('paused').classList.add('show'); AU.beatOn=false; } }
 function resumeGame(){ if(G&&G.state==='paused'){ G.state='run'; $('paused').classList.remove('show'); AU.beatOn=true; if(AU.ctx)AU.next=AU.ctx.currentTime+0.05; } }
 document.addEventListener('visibilitychange', ()=>{ if(document.hidden && !window.__hrTest) pauseGame(); });
 
 const CAUSES = {
+  caught: ["Busted — the patrol closed the gap.","The cops caught up. Run the score again."],
   generic: ["The city got the point this round.","Shake it off, legend — the next block is yours."],
   wall: ["Missed the turn — read the arrows and run it back.","Ran outta road. The shortcut was the other way."],
   bags:["Tripped over the bags. Shake it off.","Collection day changed the route."],
@@ -1061,9 +1109,10 @@ function updateHud(force){
 /* ---------------- core update ---------------- */
 function stumble(){
   if(G.invuln>0 || G.god) return;
-  G.stumbleT=0.8; G.invuln=1.4; G.shake=0.35; G.style=Math.max(0,G.style-2); G.styleT=0;
+  G.stumbleT=0.8; G.invuln=1.4; G.shake=0.35; G.gap-=2.5; G.style=Math.max(0,G.style-2); G.styleT=0;
   sfx.stumble();
   $('flash').style.opacity=1; setTimeout(()=>$('flash').style.opacity=0, 220);
+  if(G.gap<2.2) die('caught');
 }
 function playerX(){ return G.laneX; }
 
@@ -1075,8 +1124,15 @@ function update(dt){
   const sdt = dt*ts;
   G.time += sdt;
 
+  if(G.state==='intro'){
+    G.introT+=sdt; G.dist+=5.2*sdt; G.runPhase+=sdt*8;
+    if(G.introT>2.45){ G.state='run'; $('heist-intro').classList.remove('show'); showTip('Lose the patrol — read the arrows and keep moving!'); }
+    updateView(sdt); updateHud(); return;
+  }
+
   if(G.state==='dying'){
     G.dieT += dt;
+    G.gap=Math.max(1.1,G.gap-dt*5.5);
     playerMesh.userData.body.rotation.x = lerp(playerMesh.userData.body.rotation.x, G.cause==='wall'? 1.4 : -1.35, dt*6);
     playerMesh.position.y = Math.max(0.12, playerMesh.position.y - dt*2);
     if(G.dieT>1.15) finishDeath();
@@ -1093,6 +1149,9 @@ function update(dt){
   G.party=Math.max(0,G.party-sdt);
   if(G.styleT>0) G.styleT-=sdt;
   else G.style=Math.max(0,G.style-sdt*0.7);
+  G.gap=Math.min(9,G.gap+0.28*sdt);
+  G.sirenT-=sdt;
+  if(G.sirenT<=0){ if(G.gap<7.5)sfx.siren(); G.sirenT=rand(3.2,5.3); }
 
   const districtIndex = G.dist<650?0:(G.dist<1300?1:2);
   if(districtIndex!==G.district){
@@ -1223,7 +1282,7 @@ function updateView(sdt){
 
   /* run animation */
   const b=playerMesh.userData;
-  if(G.state==='run'){
+  if(G.state==='run'||G.state==='intro'){
     G.runPhase += sdt*(G.speed*0.9);
     const sw=Math.sin(G.runPhase), swA=Math.sin(G.runPhase+Math.PI);
     if(py>0.02){ b.legL.rotation.x=-1.1; b.legR.rotation.x=-0.5; b.armL.rotation.x=-2.4; b.armR.rotation.x=-2.0; b.body.rotation.x=0.1; b.body.position.y=0; b.body.scale.y=1; }
@@ -1235,6 +1294,19 @@ function updateView(sdt){
     }
     if(G.stumbleT>0){ b.body.rotation.z = Math.sin(G.time*30)*0.18*G.stumbleT; } else b.body.rotation.z=0;
     if(G.invuln>0){ playerMesh.visible = (Math.floor(G.time*14)%2)===0; } else playerMesh.visible=true;
+  }
+
+  /* pursuing officers */
+  for(let i=0;i<copMeshes.length;i++){
+    const cop=copMeshes[i], chaseD=G.dist-G.gap-i*1.1, offset=(i?0.72:-0.72);
+    worldPos(chaseD,clamp(G.laneX+offset,-2.7,2.7),0,dPos);
+    cop.position.copy(dPos); cop.rotation.y=playerAng;
+    const cb=cop.userData, ph=G.time*15+i*Math.PI;
+    cb.legL.rotation.x=Math.sin(ph)*1.05; cb.legR.rotation.x=Math.sin(ph+Math.PI)*1.05;
+    cb.armL.rotation.x=Math.sin(ph+Math.PI)*.9-.15; cb.armR.rotation.x=Math.sin(ph)*.9-.15;
+    cb.body.position.y=Math.abs(Math.sin(ph))*.06;
+    cb.body.rotation.x=G.state==='dying'?-.25:.12;
+    cb.red.visible=(Math.floor(G.time*8+i)%2)===0; cb.blue.visible=!cb.red.visible;
   }
 
   /* spin pickups */
