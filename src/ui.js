@@ -1,10 +1,11 @@
 /* HOOD RUN — ui.js
    Screens + HUD. Owns the DOM only; game rules stay in game.js. */
 
-import { COSMETICS, POWERUPS, TUNE, DISTRICTS, DISTRICT_ORDER, DISTRICT_LEN, STORE, dateKey } from './data.js';
+import { COSMETICS, POWERUPS, TUNE, DISTRICTS, DISTRICT_ORDER, DISTRICT_LEN, STORE, DEAL_OFF, dateKey } from './data.js';
 import { loadSave, commitSave, resetSave } from './save.js';
 import { activeMissions, buyCosmetic, equipCosmetic, onToast, initMissions,
-         buyConsumable, buyUpgrade, upgradeLevel, stockOf } from './progression.js';
+         buyConsumable, buyUpgrade, upgradeLevel, stockOf,
+         buyTokenItem, tokenItemCount, todaysDeal, priceOf } from './progression.js';
 import { setVolumes, sfx } from './audio.js';
 
 const $ = id => document.getElementById(id);
@@ -74,6 +75,11 @@ export function refreshHome() {
   $('district-strip').textContent = DISTRICT_ORDER.slice(0, discovered)
     .map(d => DISTRICTS[d].icon + ' ' + DISTRICTS[d].label).join('  ·  ')
     + (discovered < DISTRICT_ORDER.length ? '  ·  ???' : '');
+  // what's armed for the next run, so supplies aren't invisible until they fire
+  const armed = STORE.consumables.filter(c => stockOf(c.id) > 0)
+    .map(c => `<span class="lo">${c.icon} ${c.label}${stockOf(c.id) > 1 ? ` ×${stockOf(c.id)}` : ''}</span>`).join('');
+  $('loadout').innerHTML = armed ? `Armed for your next run: ${armed}` : '';
+
   const dailyDone = s.daily.date === dateKey();
   const streak = s.daily.streak > 1 ? ` · 🔥${s.daily.streak}-day streak` : '';
   $('daily-strip').innerHTML = dailyDone
@@ -212,29 +218,46 @@ function renderStore() {
   const s = loadSave();
   $('store-cash').textContent = s.coins.toLocaleString();
   const coin = '<i class="dot-coin"></i>';
+  const deal = todaysDeal();
+  const tag = id => id === deal ? `<span class="deal">−${Math.round(DEAL_OFF * 100)}% today</span>` : '';
+  const priceTag = (id, base) => {
+    const p = priceOf(id, base);
+    return id === deal ? `<s>${base}</s>${p}` : `${p}`;
+  };
 
   const consumables = STORE.consumables.map(c => {
     const held = stockOf(c.id);
-    const afford = s.coins >= c.price;
+    const price = priceOf(c.id, c.price);
     return `<div class="item">
       <div class="ic">${c.icon}</div>
-      <div class="txt"><div class="nm">${c.label}${held ? `<span class="own">${held} ready</span>` : ''}</div>
+      <div class="txt"><div class="nm">${c.label}${held ? `<span class="own">${held} ready</span>` : ''}${tag(c.id)}</div>
         <div class="ds">${c.desc}</div></div>
-      <button class="buy" data-kind="c" data-id="${c.id}" ${afford ? '' : 'disabled'}>${coin}${c.price}</button>
+      <button class="buy" data-kind="c" data-id="${c.id}" ${s.coins >= price ? '' : 'disabled'}>${coin}${priceTag(c.id, c.price)}</button>
     </div>`;
   }).join('');
 
   const upgrades = STORE.upgrades.map(u => {
     const lvl = upgradeLevel(u.id);
     const maxed = lvl >= u.max;
-    const price = maxed ? null : u.price[lvl];
-    const afford = !maxed && s.coins >= price;
+    const base = maxed ? 0 : u.price[lvl];
+    const price = maxed ? 0 : priceOf(u.id, base);
     const pips = Array.from({ length: u.max }, (_, i) => `<i class="${i < lvl ? 'on' : ''}"></i>`).join('');
     return `<div class="item">
       <div class="ic">${u.icon}</div>
-      <div class="txt"><div class="nm">${u.label}</div>
+      <div class="txt"><div class="nm">${u.label}${maxed ? '' : tag(u.id)}</div>
         <div class="ds">${u.desc}</div><div class="pips">${pips}</div></div>
-      <button class="buy" data-kind="u" data-id="${u.id}" ${maxed || !afford ? 'disabled' : ''}>${maxed ? 'MAX' : coin + price}</button>
+      <button class="buy" data-kind="u" data-id="${u.id}" ${maxed || s.coins < price ? 'disabled' : ''}>${maxed ? 'MAX' : coin + priceTag(u.id, base)}</button>
+    </div>`;
+  }).join('');
+
+  const tokens = STORE.tokens.map(t => {
+    const have = tokenItemCount(t.id);
+    const owned = t.once && have > 0;
+    return `<div class="item">
+      <div class="ic">${t.icon}</div>
+      <div class="txt"><div class="nm">${t.label}${have && !t.once ? `<span class="own">${have} held</span>` : ''}${owned ? '<span class="own">owned</span>' : ''}</div>
+        <div class="ds">${t.desc}</div></div>
+      <button class="buy tok" data-kind="t" data-id="${t.id}" ${owned || s.tokens < t.price ? 'disabled' : ''}>${owned ? 'OWNED' : '🔷' + t.price}</button>
     </div>`;
   }).join('');
 
@@ -244,12 +267,18 @@ function renderStore() {
        ${consumables}</div>
      <div class="store-sec"><h3>Upgrades</h3>
        <p class="hint">Permanent. Makes the power-ups you find out on the street last longer.</p>
-       ${upgrades}</div>`;
+       ${upgrades}</div>
+     <div class="store-sec"><h3>Crosstown Tokens · ${s.tokens}</h3>
+       <p class="hint">Tokens come from finishing missions. They buy things cash can't.</p>
+       ${tokens}</div>`;
 
   for (const btn of $('store-body').querySelectorAll('.buy')) {
     if (btn.disabled) continue;
     const act = () => {
-      const r = btn.dataset.kind === 'c' ? buyConsumable(btn.dataset.id) : buyUpgrade(btn.dataset.id);
+      const k = btn.dataset.kind;
+      const r = k === 'c' ? buyConsumable(btn.dataset.id)
+              : k === 'u' ? buyUpgrade(btn.dataset.id)
+                          : buyTokenItem(btn.dataset.id);
       if (r.ok) { sfx.buy(); haptic(12); renderStore(); refreshHome(); }
       else showToast(r.msg);
     };

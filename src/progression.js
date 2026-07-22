@@ -1,7 +1,7 @@
 /* HOOD RUN — progression.js
    Missions (3 active, rotating, persistent), coins/tokens economy, unlocks. */
 
-import { MISSIONS, MISSION_TOKEN_REWARD, COSMETICS, STORE, TUNE } from './data.js';
+import { MISSIONS, MISSION_TOKEN_REWARD, COSMETICS, STORE, TUNE, dealIdFor, dealPrice } from './data.js';
 import { loadSave, commitSave } from './save.js';
 
 let toastCb = null;
@@ -13,7 +13,8 @@ export function initMissions() {
   const m = s.missions;
   // Bounded scan: once every mission is active-or-done there is nothing left to
   // slot in, and an unbounded loop here would spin forever (active never fills).
-  while (m.active.length < 3) {
+  const slots = 3 + (s.store?.tokenItems?.missionslot ? 1 : 0);
+  while (m.active.length < slots) {
     let picked = false;
     for (let tries = 0; tries < MISSIONS.length; tries++) {
       const next = MISSIONS[m.cursor % MISSIONS.length];
@@ -86,12 +87,17 @@ export function upgradePrice(id) {
   return (def && lvl < def.max) ? def.price[lvl] : null;
 }
 
+/* today's discounted item, and the price you actually pay for anything */
+export function todaysDeal() { return dealIdFor(); }
+export function priceOf(id, base) { return id === dealIdFor() ? dealPrice(base) : base; }
+
 export function buyConsumable(id) {
   const s = loadSave();
   const def = STORE.consumables.find(c => c.id === id);
   if (!def) return { ok: false, msg: 'Unknown item' };
-  if (s.coins < def.price) return { ok: false, msg: 'Not enough cash' };
-  s.coins -= def.price;
+  const price = priceOf(id, def.price);
+  if (s.coins < price) return { ok: false, msg: 'Not enough cash' };
+  s.coins -= price;
   s.store.stock[id] = (s.store.stock[id] || 0) + 1;
   commitSave();
   return { ok: true, stock: s.store.stock[id] };
@@ -103,12 +109,36 @@ export function buyUpgrade(id) {
   if (!def) return { ok: false, msg: 'Unknown item' };
   const lvl = s.store.upgrades[id] || 0;
   if (lvl >= def.max) return { ok: false, msg: 'Already maxed' };
-  const price = def.price[lvl];
+  const price = priceOf(id, def.price[lvl]);
   if (s.coins < price) return { ok: false, msg: 'Not enough cash' };
   s.coins -= price;
   s.store.upgrades[id] = lvl + 1;
   commitSave();
   return { ok: true, level: lvl + 1 };
+}
+
+/* ---- token items: bought with mission tokens, never with cash ---- */
+export function tokenItemCount(id) { return loadSave().store.tokenItems[id] || 0; }
+export function buyTokenItem(id) {
+  const s = loadSave();
+  const def = STORE.tokens.find(t => t.id === id);
+  if (!def) return { ok: false, msg: 'Unknown item' };
+  if (def.once && (s.store.tokenItems[id] || 0) > 0) return { ok: false, msg: 'Already owned' };
+  if (s.tokens < def.price) return { ok: false, msg: 'Not enough tokens' };
+  s.tokens -= def.price;
+  s.store.tokenItems[id] = (s.store.tokenItems[id] || 0) + 1;
+  commitSave();
+  return { ok: true, count: s.store.tokenItems[id] };
+}
+/* how many missions you can track at once (base 3, +1 if you bought the slot) */
+export function missionSlots() { return 3 + (loadSave().store.tokenItems.missionslot ? 1 : 0); }
+/* spend a Streak Shield to save a broken Daily streak; true if it saved you */
+export function useStreakShield() {
+  const s = loadSave();
+  if ((s.store.tokenItems.streakshield || 0) <= 0) return false;
+  s.store.tokenItems.streakshield--;
+  commitSave();
+  return true;
 }
 
 /* per-run power-up durations with purchased upgrades folded in */

@@ -247,7 +247,26 @@ export const STORE = {
     { id: 'doublestyle', label: 'Style Coach', icon: '✨', max: 3, bonus: 2.5,
       price: [300, 650, 1100], desc: 'Double Style lasts +2.5s per level.' },
   ],
+  /* Crosstown tokens come only from missions, so they buy things cash can't:
+     progression depth, never raw power. */
+  tokens: [
+    { id: 'missionslot', label: 'Extra Mission Slot', icon: '📋', price: 3, once: true,
+      desc: 'Track a 4th mission at once, permanently.' },
+    { id: 'streakshield', label: 'Streak Shield', icon: '🔥', price: 2,
+      desc: 'Your Daily streak survives one missed day. Consumed when it saves you.' },
+  ],
 };
+
+/* One store item is discounted each day, picked from the date so everyone sees
+   the same deal — a reason to look in without any pressure tactics. */
+export const DEAL_OFF = 0.3;
+export function dealIdFor(key = dateKey()) {
+  const pool = [...STORE.consumables.map(c => c.id), ...STORE.upgrades.map(u => u.id)];
+  let h = 5381;
+  for (let i = 0; i < key.length; i++) h = ((h * 33) ^ key.charCodeAt(i)) >>> 0;
+  return pool[h % pool.length];
+}
+export function dealPrice(base) { return Math.max(1, Math.round(base * (1 - DEAL_OFF))); }
 
 export const CALLOUTS = {
   nearMiss: 'CLOSE CALL', perfectJump: 'PERFECT JUMP', perfectSlide: 'PERFECT SLIDE',

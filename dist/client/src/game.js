@@ -7,7 +7,7 @@ import { TUNE, LANE_W, HAZARDS, CALLOUTS, CRASH_LINES, DISTRICTS, ROOF_H, HEADST
 import { nextSegDescriptor, populateSegment, districtAt, phaseAt } from './segment-generator.js';
 import { checkCollisions, updateMovers } from './collisions.js';
 import { loadSave, commitSave } from './save.js';
-import { missionEvent, addCoins, addTokens, initMissions, powDurations, takeConsumables } from './progression.js';
+import { missionEvent, addCoins, addTokens, initMissions, powDurations, takeConsumables, useStreakShield } from './progression.js';
 
 export const STATES = { BOOT: 'boot', HOME: 'home', COUNTDOWN: 'countdown', RUNNING: 'running', PAUSED: 'paused', CRASHED: 'crashed', RESULTS: 'results' };
 let state = STATES.BOOT;
@@ -116,7 +116,9 @@ function finishRun() {
     const key = dateKey();
     if (s.daily.date !== key) { // first daily of a new day
       const prevKey = dateKey(new Date(Date.now() - 86400000));
-      s.daily.streak = (s.daily.date === prevKey) ? (s.daily.streak + 1) : 1;
+      if (s.daily.date === prevKey) s.daily.streak += 1;
+      else if (s.daily.streak > 0 && useStreakShield()) { s.daily.streak += 1; G.streakSaved = true; }
+      else s.daily.streak = 1;
       s.daily.date = key; s.daily.best = 0; s.daily.playedToday = true;
     }
     s.daily.playedToday = true;
