@@ -64,8 +64,12 @@
   .hud-left{ display:flex; flex-direction:column; gap:6px; align-items:flex-start; }
   .hud-mid{ flex:1; display:flex; justify-content:center; padding-top:2px; }
   .score-wrap{ display:flex; align-items:baseline; gap:var(--sp2); }
+  /* the score floats over sky that ranges from bright day to night, so it needs a
+     real outline rather than a drop shadow to stay legible in every district */
   #hud-score{ font-size:clamp(26px,7.5vw,36px); font-weight:900; line-height:1; color:#fff;
-    text-shadow:0 2px 0 var(--ink), 0 4px 14px rgba(0,0,0,.6); letter-spacing:-.5px; }
+    letter-spacing:-.5px; paint-order:stroke fill;
+    -webkit-text-stroke:3.5px var(--ink);
+    text-shadow:0 3px 12px rgba(0,0,0,.75); }
   #hud-mult{ font-size:13px; font-weight:900; padding:3px 9px; border-radius:var(--r-pill);
     background:linear-gradient(180deg,var(--teal),#1fa89a); color:#04211e;
     box-shadow:var(--e1); transition:transform .18s var(--ease); }

@@ -27,6 +27,17 @@ export function musicStart() { A.beatOn = true; if (A.ctx) { A.next = A.ctx.curr
 export function musicStop() { A.beatOn = false; }
 export function musicLayers(l2, l3) { A.layer2 = l2; A.layer3 = l3; }
 
+/* duck the music under important warnings so cues cut through (bible §13) */
+export function duck(amount = 0.45, hold = 0.18, release = 0.35) {
+  if (!A.musicBus || !A.ctx) return;
+  const g = A.musicBus.gain, t = A.ctx.currentTime, full = A.musicVol * 0.55;
+  g.cancelScheduledValues(t);
+  g.setValueAtTime(g.value, t);
+  g.linearRampToValueAtTime(full * (1 - amount), t + 0.05);
+  g.setValueAtTime(full * (1 - amount), t + 0.05 + hold);
+  g.linearRampToValueAtTime(full, t + 0.05 + hold + release);
+}
+
 const BPM = 96, STEP = 60 / BPM / 4;
 const KICK  = [1,0,0,0, 0,0,1,0, 1,0,0,0, 0,0,0,0];
 const SNARE = [0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,1];
@@ -103,11 +114,11 @@ export const sfx = {
   letter() { blip(880, 0.2, 'triangle', 0.18, 160); },
   hood() { [523, 659, 784, 1046, 1318].forEach((f, i) => setTimeout(() => blip(f, 0.18, 'square', 0.15), i * 80)); },
   pow() { [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => blip(f, 0.15, 'square', 0.15), i * 65)); },
-  shieldSave() { blip(392, 0.3, 'triangle', 0.3, 200); blip(784, 0.4, 'sine', 0.2, 100); },
+  shieldSave() { duck(0.55, 0.25, 0.45); blip(392, 0.3, 'triangle', 0.3, 200); blip(784, 0.4, 'sine', 0.2, 100); },
   stumble() { blip(150, 0.18, 'sine', 0.38, -70); if (A.ctx) noiseTo(A.sfxBus, A.ctx.currentTime, 0.12, 900, 'lowpass', 0.26); },
   crash() { blip(95, 0.45, 'sine', 0.5, -50); if (A.ctx) noiseTo(A.sfxBus, A.ctx.currentTime, 0.35, 650, 'lowpass', 0.45); },
   splash() { if (A.ctx) noiseTo(A.sfxBus, A.ctx.currentTime, 0.22, 1600, 'bandpass', 0.2); },
-  bell() { blip(1320, 0.3, 'triangle', 0.22, -60); setTimeout(() => blip(1320, 0.25, 'triangle', 0.16, -60), 180); },
+  bell() { duck(0.4, 0.15, 0.3); blip(1320, 0.3, 'triangle', 0.22, -60); setTimeout(() => blip(1320, 0.25, 'triangle', 0.16, -60), 180); },
   party() { [523, 659, 784, 880, 1046, 1318].forEach((f, i) => setTimeout(() => blip(f, 0.2, 'square', 0.14), i * 55)); },
   mission() { [784, 988, 1175].forEach((f, i) => setTimeout(() => blip(f, 0.2, 'triangle', 0.18), i * 90)); },
   highscore() { [523, 659, 784, 1046, 784, 1046, 1318].forEach((f, i) => setTimeout(() => blip(f, 0.22, 'square', 0.13), i * 90)); },
@@ -121,5 +132,5 @@ export const sfx = {
     }
   },
   whistle() { blip(1450, 0.12, 'sine', 0.16, 320); setTimeout(() => blip(1450, 0.2, 'sine', 0.16, 380), 150); },
-  bounce() { blip(180, 0.14, 'sine', 0.24, 260); setTimeout(() => blip(240, 0.12, 'sine', 0.18, 200), 130); },
+  bounce() { duck(0.35, 0.12, 0.3); blip(180, 0.14, 'sine', 0.24, 260); setTimeout(() => blip(240, 0.12, 'sine', 0.18, 200), 130); },
 };
