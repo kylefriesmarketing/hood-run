@@ -42,6 +42,12 @@ src/main.js               wiring, view/camera, render loop, adaptive quality, __
 manifest.webmanifest, sw.js, icon.svg   installable offline PWA shell
 ```
 
+Content: four districts (The Block → Market Mile → Downtown Cut → **Night
+Market**, rotating every 850m), 25 hazards, two shortcut routes (**alley** and
+the elevated **rooftop** run — jump-focused, unlocks past 600m, telegraphed by
+a purple ROOFS gate), four power-ups, and 36 cosmetics across six slots
+including **victory poses**.
+
 Extras beyond the core loop: **Daily Challenge** (one seeded city per day,
 shared by everyone, with a per-day best + day streak), **particle VFX** + speed
 lines (all reduced-motion aware), a **debug overlay** (§14 — toggle with the
