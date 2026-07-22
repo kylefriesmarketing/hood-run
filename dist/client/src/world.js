@@ -690,15 +690,40 @@ export function mkHazardMesh(kind) {
 }
 
 /* ---------------- pickups ---------------- */
-export function mkCoin() {
+/* a banded stack of bills — Jay is carrying a bank score, not loose change */
+let _billTex = null;
+function billTex() {
+  if (_billTex) return _billTex;
+  _billTex = tex(64, 32, (g, w, h) => {
+    g.fillStyle = '#5fa86a'; g.fillRect(0, 0, w, h);
+    g.strokeStyle = '#3f7d4c'; g.lineWidth = 2; g.strokeRect(3, 3, w - 6, h - 6);
+    g.fillStyle = '#dff3e2'; g.beginPath(); g.arc(w / 2, h / 2, 7, 0, 7); g.fill();
+    g.fillStyle = '#3f7d4c'; g.font = 'bold 11px Georgia'; g.textAlign = 'center';
+    g.fillText('$', w / 2, h / 2 + 4);
+  });
+  return _billTex;
+}
+export function mkCash() {
   const g = new THREE.Group();
-  const c = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.09, 14), cmat(0xe8b83c));
-  c.rotation.x = Math.PI / 2; g.add(c);
-  const inner = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.1, 12), cmat(0xffd86a));
-  inner.rotation.x = Math.PI / 2; g.add(inner);
-  g.add(box(0.08, 0.3, 0.11, 0x3bd6c6, 0, 0, 0));
+  const billMat = new THREE.MeshLambertMaterial({ map: billTex() });
+  const edgeMat = cmat(0xcfe8d2);
+  // four bills fanned very slightly so the stack reads at speed
+  for (let i = 0; i < 4; i++) {
+    const b = new THREE.Mesh(BOX, i === 3 ? billMat : edgeMat);
+    b.scale.set(0.62, 0.05, 0.34);
+    b.position.set(0, -0.06 + i * 0.05, 0);
+    b.rotation.y = (i - 1.5) * 0.05;
+    g.add(b);
+  }
+  // paper band across the middle
+  g.add(box(0.16, 0.23, 0.36, 0xe8604c, 0, 0, 0));
+  const glow = new THREE.Mesh(new THREE.CircleGeometry(0.42, 12),
+    new THREE.MeshBasicMaterial({ color: 0x7fe89a, transparent: true, opacity: 0.16,
+      blending: THREE.AdditiveBlending, depthWrite: false }));
+  glow.rotation.x = -Math.PI / 2; glow.position.y = -0.34; g.add(glow);
   return g;
 }
+export const mkCoin = mkCash;      // pickup call sites still say "coin"
 export function mkToken() {
   const g = new THREE.Group();
   const t = new THREE.Mesh(new THREE.OctahedronGeometry(0.42, 0), cmat(0x3bd6c6, { emissive: 0x1a6a62 }));

@@ -42,6 +42,12 @@ src/main.js               wiring, view/camera, render loop, adaptive quality, __
 manifest.webmanifest, sw.js, icon.svg   installable offline PWA shell
 ```
 
+Cash you collect (banded stacks of bills — Jay is carrying a bank score, not
+loose change) is spent in two places: the **Corner Store** for one-run supplies
+(Head Start, Fresh Start shield, Payday doubler) and permanent power-up
+upgrades, and **Jay's Closet** for cosmetics. Consumables are deliberately NOT
+spent on Daily Challenge runs, so that shared-seed board stays comparable.
+
 Content: four districts (The Block → Market Mile → Downtown Cut → **Night
 Market**, rotating every 850m), 25 hazards, two shortcut routes (**alley** and
 the elevated **rooftop** run — jump-focused, unlocks past 600m, telegraphed by

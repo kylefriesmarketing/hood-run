@@ -1,7 +1,7 @@
 /* HOOD RUN — progression.js
    Missions (3 active, rotating, persistent), coins/tokens economy, unlocks. */
 
-import { MISSIONS, MISSION_TOKEN_REWARD, COSMETICS } from './data.js';
+import { MISSIONS, MISSION_TOKEN_REWARD, COSMETICS, STORE, TUNE } from './data.js';
 import { loadSave, commitSave } from './save.js';
 
 let toastCb = null;
@@ -76,6 +76,64 @@ export function buyCosmetic(slot, id) {
   commitSave();
   return { ok: true, bought: true };
 }
+/* ---------------- the Corner Store ---------------- */
+export function upgradeLevel(id) { return loadSave().store.upgrades[id] || 0; }
+export function stockOf(id) { return loadSave().store.stock[id] || 0; }
+
+export function upgradePrice(id) {
+  const def = STORE.upgrades.find(u => u.id === id);
+  const lvl = upgradeLevel(id);
+  return (def && lvl < def.max) ? def.price[lvl] : null;
+}
+
+export function buyConsumable(id) {
+  const s = loadSave();
+  const def = STORE.consumables.find(c => c.id === id);
+  if (!def) return { ok: false, msg: 'Unknown item' };
+  if (s.coins < def.price) return { ok: false, msg: 'Not enough cash' };
+  s.coins -= def.price;
+  s.store.stock[id] = (s.store.stock[id] || 0) + 1;
+  commitSave();
+  return { ok: true, stock: s.store.stock[id] };
+}
+
+export function buyUpgrade(id) {
+  const s = loadSave();
+  const def = STORE.upgrades.find(u => u.id === id);
+  if (!def) return { ok: false, msg: 'Unknown item' };
+  const lvl = s.store.upgrades[id] || 0;
+  if (lvl >= def.max) return { ok: false, msg: 'Already maxed' };
+  const price = def.price[lvl];
+  if (s.coins < price) return { ok: false, msg: 'Not enough cash' };
+  s.coins -= price;
+  s.store.upgrades[id] = lvl + 1;
+  commitSave();
+  return { ok: true, level: lvl + 1 };
+}
+
+/* per-run power-up durations with purchased upgrades folded in */
+export function powDurations() {
+  const s = loadSave();
+  const out = { ...TUNE.powDur };
+  for (const def of STORE.upgrades) {
+    const lvl = s.store.upgrades[def.id] || 0;
+    if (lvl && out[def.id] !== undefined) out[def.id] += def.bonus * lvl;
+  }
+  return out;
+}
+
+/* spend one of each stocked consumable; Daily runs never consume (fair board) */
+export function takeConsumables(isDaily) {
+  const s = loadSave();
+  const use = { headstart: false, shield: false, doubler: false };
+  if (isDaily) return use;
+  for (const k of Object.keys(use)) {
+    if ((s.store.stock[k] || 0) > 0) { s.store.stock[k]--; use[k] = true; }
+  }
+  commitSave();
+  return use;
+}
+
 export function equipCosmetic(slot, id) {
   const s = loadSave();
   if (!s.unlocks.owned.includes(id)) return false;

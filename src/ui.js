@@ -1,9 +1,10 @@
 /* HOOD RUN — ui.js
    Screens + HUD. Owns the DOM only; game rules stay in game.js. */
 
-import { COSMETICS, POWERUPS, TUNE, DISTRICTS, DISTRICT_ORDER, DISTRICT_LEN, dateKey } from './data.js';
+import { COSMETICS, POWERUPS, TUNE, DISTRICTS, DISTRICT_ORDER, DISTRICT_LEN, STORE, dateKey } from './data.js';
 import { loadSave, commitSave, resetSave } from './save.js';
-import { activeMissions, buyCosmetic, equipCosmetic, onToast, initMissions } from './progression.js';
+import { activeMissions, buyCosmetic, equipCosmetic, onToast, initMissions,
+         buyConsumable, buyUpgrade, upgradeLevel, stockOf } from './progression.js';
 import { setVolumes, sfx } from './audio.js';
 
 const $ = id => document.getElementById(id);
@@ -20,9 +21,10 @@ export function initUI(h) {
   bindTap('resume-btn', () => hooks.resume());
   bindTap('pause-home-btn', () => { showScreen('home'); hooks.toHome(); });
   bindTap('runner-btn', () => { renderRunner(); showScreen('runner'); });
+  bindTap('store-btn', () => { renderStore(); showScreen('store'); });
   bindTap('missions-btn', () => { renderMissions(); showScreen('missions'); });
   bindTap('settings-btn', () => { renderSettings(); showScreen('settings'); });
-  for (const id of ['runner-back', 'missions-back', 'settings-back']) bindTap(id, () => { refreshHome(); showScreen('home'); });
+  for (const id of ['runner-back', 'store-back', 'missions-back', 'settings-back']) bindTap(id, () => { refreshHome(); showScreen('home'); });
   bindTap('pause-btn', () => hooks.pause());
   bindTap('tut-skip', () => hooks.skipTutorial());
   bindScrollFades();
@@ -41,7 +43,7 @@ function bindTap(id, fn) {
   el.addEventListener('touchend', e => { e.preventDefault(); e.stopPropagation(); sfx.ui(); haptic(10); fn(); }, { passive: false });
 }
 
-const SCREENS = ['home', 'runner', 'missions', 'settings', 'over', 'paused'];
+const SCREENS = ['home', 'runner', 'store', 'missions', 'settings', 'over', 'paused'];
 export function showScreen(name) {
   for (const s of SCREENS) $(s)?.classList.toggle('show', s === name);
   $('hud').classList.toggle('show', name === null);
@@ -103,7 +105,8 @@ export function updateHud(G, force, mult, total) {
   for (const k of ['boost', 'magnet', 'doublestyle']) {
     if (G.pows[k] > 0) {
       const def = POWERUPS[k];
-      html += `<div class="pow" style="border-color:${def.color}"><span>${def.icon}</span><i style="width:${(G.pows[k] / TUNE.powDur[k]) * 100}%;background:${def.color}"></i></div>`;
+      const max = (G.powDur && G.powDur[k]) || TUNE.powDur[k];
+      html += `<div class="pow" style="border-color:${def.color}"><span>${def.icon}</span><i style="width:${Math.min(100, (G.pows[k] / max) * 100)}%;background:${def.color}"></i></div>`;
     }
   }
   if (G.pows.shield > 0) html += `<div class="pow" style="border-color:${POWERUPS.shield.color}"><span>${POWERUPS.shield.icon}</span><i style="width:100%;background:${POWERUPS.shield.color}"></i></div>`;
@@ -166,13 +169,13 @@ export function showResults(r) {
   $('ov-total').textContent = r.total.toLocaleString();
   $('ov-cause').textContent = r.cause;
   $('ov-breakdown').innerHTML = [
-    ['Distance', Math.floor(r.parts.dist)], ['Coins', Math.floor(r.parts.coins)],
+    ['Distance', Math.floor(r.parts.dist)], ['Cash', Math.floor(r.parts.coins)],
     ['Style', Math.floor(r.parts.style)], ['Route', Math.floor(r.parts.route)],
     ['Letters', Math.floor(r.parts.letters)],
   ].filter(x => x[1] > 0).map(x => `<div class="br"><span>${x[0]}</span><b>${x[1].toLocaleString()}</b></div>`).join('');
   $('ov-stats').innerHTML =
     `<div class="res"><div class="v">${r.dist}m</div><div class="l">Distance</div></div>` +
-    `<div class="res"><div class="v coin-v">●${r.coins}</div><div class="l">Coins</div></div>` +
+    `<div class="res"><div class="v">${r.coins.toLocaleString()}</div><div class="l">Cash</div></div>` +
     `<div class="res"><div class="v">×${r.styleMax}</div><div class="l">Best Chain</div></div>`;
   $('newbest').style.display = r.newHigh ? 'block' : 'none';
   if (r.newHigh) sfx.highscore();
@@ -195,13 +198,64 @@ function renderMissions() {
   const lt = s.lifetime;
   const stats = [
     ['Runs', lt.runs], ['Total distance', (lt.dist || 0).toLocaleString() + 'm'],
-    ['Coins earned', (lt.coins || 0).toLocaleString()], ['Close calls', lt.nearmiss || 0],
+    ['Cash collected', (lt.coins || 0).toLocaleString()], ['Close calls', lt.nearmiss || 0],
     ['Perfect jumps', lt.pjump || 0], ['Perfect slides', lt.pslide || 0],
     ['Shortcuts taken', lt.shortcut || 0], ['Block Parties', lt.party || 0],
     ['H-O-O-D spelled', lt.hood || 0],
   ];
   $('lifetime-stats').innerHTML = '<h3 class="lt-h">LIFETIME</h3>' +
     stats.map(([k, v]) => `<div class="br"><span>${k}</span><b>${v}</b></div>`).join('');
+}
+
+/* ---------------- the Corner Store ---------------- */
+function renderStore() {
+  const s = loadSave();
+  $('store-cash').textContent = s.coins.toLocaleString();
+  const coin = '<i class="dot-coin"></i>';
+
+  const consumables = STORE.consumables.map(c => {
+    const held = stockOf(c.id);
+    const afford = s.coins >= c.price;
+    return `<div class="item">
+      <div class="ic">${c.icon}</div>
+      <div class="txt"><div class="nm">${c.label}${held ? `<span class="own">${held} ready</span>` : ''}</div>
+        <div class="ds">${c.desc}</div></div>
+      <button class="buy" data-kind="c" data-id="${c.id}" ${afford ? '' : 'disabled'}>${coin}${c.price}</button>
+    </div>`;
+  }).join('');
+
+  const upgrades = STORE.upgrades.map(u => {
+    const lvl = upgradeLevel(u.id);
+    const maxed = lvl >= u.max;
+    const price = maxed ? null : u.price[lvl];
+    const afford = !maxed && s.coins >= price;
+    const pips = Array.from({ length: u.max }, (_, i) => `<i class="${i < lvl ? 'on' : ''}"></i>`).join('');
+    return `<div class="item">
+      <div class="ic">${u.icon}</div>
+      <div class="txt"><div class="nm">${u.label}</div>
+        <div class="ds">${u.desc}</div><div class="pips">${pips}</div></div>
+      <button class="buy" data-kind="u" data-id="${u.id}" ${maxed || !afford ? 'disabled' : ''}>${maxed ? 'MAX' : coin + price}</button>
+    </div>`;
+  }).join('');
+
+  $('store-body').innerHTML =
+    `<div class="store-sec"><h3>Supplies</h3>
+       <p class="hint">One-run items, spent automatically on your next run. Daily Challenge runs never spend them, so that board stays fair.</p>
+       ${consumables}</div>
+     <div class="store-sec"><h3>Upgrades</h3>
+       <p class="hint">Permanent. Makes the power-ups you find out on the street last longer.</p>
+       ${upgrades}</div>`;
+
+  for (const btn of $('store-body').querySelectorAll('.buy')) {
+    if (btn.disabled) continue;
+    const act = () => {
+      const r = btn.dataset.kind === 'c' ? buyConsumable(btn.dataset.id) : buyUpgrade(btn.dataset.id);
+      if (r.ok) { sfx.buy(); haptic(12); renderStore(); refreshHome(); }
+      else showToast(r.msg);
+    };
+    btn.onclick = act;
+    btn.addEventListener('touchend', e => { e.preventDefault(); e.stopPropagation(); act(); }, { passive: false });
+  }
 }
 
 /* ---------------- runner screen (cosmetics) ---------------- */

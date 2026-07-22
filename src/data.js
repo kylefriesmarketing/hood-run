@@ -221,6 +221,30 @@ export const COSMETICS = {
   ],
 };
 
+/* ---------- the Corner Store ----------
+   Everything is bought with cash you actually ran for. No real money, no loot
+   boxes, no timers (bible §20). Consumables are disabled on Daily runs so the
+   shared-seed leaderboard stays comparable. */
+export const HEADSTART_M = 250;
+export const STORE = {
+  consumables: [
+    { id: 'headstart', label: 'Head Start', icon: '🚀', price: 150,
+      desc: 'Skip the warm-up — begin your next run 250m in.' },
+    { id: 'shield', label: 'Fresh Start', icon: '🛡️', price: 200,
+      desc: 'Start carrying a shield that saves you from one crash.' },
+    { id: 'doubler', label: 'Payday', icon: '💵', price: 250,
+      desc: 'Double all cash you pick up for one run.' },
+  ],
+  upgrades: [
+    { id: 'magnet', label: 'Longer Magnet', icon: '🧲', max: 3, bonus: 2.5,
+      price: [300, 650, 1100], desc: 'Coin Magnet lasts +2.5s per level.' },
+    { id: 'boost', label: 'Better Tread', icon: '⚡', max: 3, bonus: 1.5,
+      price: [300, 650, 1100], desc: 'Sneaker Boost lasts +1.5s per level.' },
+    { id: 'doublestyle', label: 'Style Coach', icon: '✨', max: 3, bonus: 2.5,
+      price: [300, 650, 1100], desc: 'Double Style lasts +2.5s per level.' },
+  ],
+};
+
 export const CALLOUTS = {
   nearMiss: 'CLOSE CALL', perfectJump: 'PERFECT JUMP', perfectSlide: 'PERFECT SLIDE',
   weave: 'WEAVE', shortcut: 'SHORTCUT!', coinLine: 'CLEAN SWEEP', party: '🎉 BLOCK PARTY!',

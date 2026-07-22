@@ -79,8 +79,12 @@
     font-size:13px; font-weight:800; letter-spacing:.3px; text-shadow:0 1px 3px #000; }
   #hud-dist{ color:#dbe3f5; }
   #hud-coins{ color:var(--gold); }
-  .dot-coin{ width:9px; height:9px; border-radius:50%; background:linear-gradient(180deg,#ffe27a,var(--gold-deep));
-    box-shadow:0 0 6px rgba(255,210,60,.7); flex:none; }
+  /* a tiny banded cash stack, matching the pickups */
+  .dot-coin{ width:14px; height:9px; border-radius:2px; flex:none; position:relative;
+    background:linear-gradient(180deg,#7fc98c,#4f9a61);
+    box-shadow:0 0 6px rgba(95,224,138,.5), inset 0 -2px 0 rgba(0,0,0,.22); }
+  .dot-coin::after{ content:''; position:absolute; left:50%; top:-1px; width:4px; height:11px;
+    transform:translateX(-50%); background:var(--coral); border-radius:1px; }
   #pause-btn{ pointer-events:auto; width:46px; height:46px; border-radius:var(--r-md); flex:none;
     background:rgba(10,14,26,.55); border:1px solid var(--line); backdrop-filter:blur(10px);
     color:#fff; font-size:15px; display:grid; place-items:center; box-shadow:var(--e1);
@@ -227,11 +231,11 @@
 
   /* home nav tiles */
   .nav-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:var(--sp2); margin-top:var(--sp3); }
-  .nav-tile{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px;
-    min-height:66px; border-radius:var(--r-md); background:rgba(255,255,255,.06);
-    border:1px solid var(--line); font-size:11px; font-weight:800; letter-spacing:.4px; color:#d6deef;
+  .nav-tile{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+    min-height:58px; border-radius:var(--r-md); background:rgba(255,255,255,.06);
+    border:1px solid var(--line); font-size:10.5px; font-weight:800; letter-spacing:.4px; color:#d6deef;
     transition:transform .12s var(--ease), background .2s; }
-  .nav-tile span{ font-size:20px; }
+  .nav-tile span{ font-size:18px; }
   .nav-tile:active{ transform:scale(.94); background:rgba(255,255,255,.12); }
 
   /* stat strip */
@@ -310,6 +314,32 @@
   .cos .price{ color:var(--gold); font-size:11.5px; font-weight:800; }
   #runner-coins{ font-size:15px; font-weight:900; color:var(--gold); }
 
+  /* store */
+  .store-sec{ text-align:left; margin-bottom:var(--sp5); }
+  .store-sec h3{ font-size:10px; letter-spacing:2.4px; text-transform:uppercase; color:var(--muted);
+    margin-bottom:var(--sp1); font-weight:800; }
+  .store-sec .hint{ font-size:11.5px; color:var(--muted); margin-bottom:var(--sp3); line-height:1.45; }
+  .item{ display:flex; align-items:center; gap:var(--sp3); padding:var(--sp3);
+    background:rgba(255,255,255,.05); border:1px solid var(--line); border-radius:var(--r-md); margin-bottom:var(--sp2); }
+  .item .ic{ width:44px; height:44px; border-radius:var(--r-md); flex:none; display:grid; place-items:center;
+    font-size:22px; background:rgba(0,0,0,.3); border:1px solid var(--line); }
+  .item .txt{ flex:1; min-width:0; }
+  .item .nm{ font-weight:800; font-size:13.5px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  .item .ds{ font-size:11.5px; color:var(--muted); margin-top:2px; line-height:1.4; }
+  .item .own{ font-size:10.5px; font-weight:800; color:var(--green); background:rgba(95,224,138,.14);
+    border:1px solid rgba(95,224,138,.35); border-radius:var(--r-pill); padding:1px 7px; }
+  .buy{ flex:none; min-height:46px; padding:0 14px; border-radius:var(--r-md); font-weight:900; font-size:13px;
+    display:flex; align-items:center; gap:5px; color:#2a1602;
+    background:linear-gradient(180deg,#ffe98a,var(--gold) 55%,var(--gold-deep));
+    box-shadow:0 3px 0 #9a6304; transition:transform .1s var(--ease), box-shadow .1s var(--ease); }
+  .buy:active{ transform:translateY(3px); box-shadow:0 0 0 #9a6304; }
+  .buy[disabled]{ background:rgba(255,255,255,.08); color:var(--muted); box-shadow:none;
+    border:1px solid var(--line); font-weight:700; }
+  .buy .dot-coin{ width:8px; height:8px; }
+  .pips{ display:flex; gap:3px; margin-top:5px; }
+  .pips i{ width:16px; height:4px; border-radius:2px; background:rgba(255,255,255,.16); display:block; }
+  .pips i.on{ background:linear-gradient(90deg,var(--teal),var(--gold)); }
+
   /* settings */
   .setting{ display:flex; align-items:center; justify-content:space-between; gap:var(--sp4);
     padding:var(--sp3) var(--sp1); border-bottom:1px solid var(--line); text-align:left; font-size:13.5px; font-weight:600; }
@@ -372,7 +402,7 @@
       <div class="stat-row">
         <div class="stat-card"><div class="v num" id="hs-best">0</div><div class="l">Best</div></div>
         <div class="stat-card"><div class="v num" id="hs-far">0m</div><div class="l">Farthest</div></div>
-        <div class="stat-card"><div class="v num" id="hs-coins">0</div><div class="l">Coins</div></div>
+        <div class="stat-card"><div class="v num" id="hs-coins">0</div><div class="l">Cash</div></div>
       </div>
       <div class="controls">
         <b>← →</b><span>Lanes &amp; corner turns</span>
@@ -388,10 +418,11 @@
       <button class="btn" id="play-btn">▶ &nbsp;RUN</button>
       <div class="nav-grid">
         <button class="nav-tile" id="daily-btn"><span>🗓️</span>Daily</button>
+        <button class="nav-tile" id="store-btn"><span>🏪</span>Store</button>
         <button class="nav-tile" id="runner-btn"><span>🧢</span>Runner</button>
-        <button class="nav-tile" id="missions-btn"><span>📋</span>Missions</button>
       </div>
-      <div class="nav-grid" style="grid-template-columns:1fr">
+      <div class="nav-grid" style="grid-template-columns:repeat(2,1fr)">
+        <button class="nav-tile" id="missions-btn"><span>📋</span>Missions</button>
         <button class="nav-tile" id="settings-btn"><span>⚙️</span>Settings</button>
       </div>
     </div>
@@ -443,6 +474,18 @@
       <div class="head-tag"><i class="dot-coin"></i><span id="runner-coins" class="num">0</span></div>
     </div>
     <div class="sheet-body" id="runner-slots"></div>
+  </div>
+</div>
+
+<!-- ===== STORE ===== -->
+<div id="store" class="overlay">
+  <div class="sheet">
+    <div class="sheet-head">
+      <button class="icon-btn" id="store-back" aria-label="Back">←</button>
+      <h2>Corner Store</h2>
+      <div class="head-tag"><i class="dot-coin"></i><span id="store-cash" class="num">0</span></div>
+    </div>
+    <div class="sheet-body" id="store-body"></div>
   </div>
 </div>
 

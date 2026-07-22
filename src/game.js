@@ -3,11 +3,11 @@
    style chain, Crosstown meter, difficulty, run lifecycle.
    No DOM, no THREE — pure logic + callbacks. */
 
-import { TUNE, LANE_W, HAZARDS, CALLOUTS, CRASH_LINES, DISTRICTS, ROOF_H, makeRng, hash2, dateKey, dailySeed } from './data.js';
+import { TUNE, LANE_W, HAZARDS, CALLOUTS, CRASH_LINES, DISTRICTS, ROOF_H, HEADSTART_M, makeRng, hash2, dateKey, dailySeed } from './data.js';
 import { nextSegDescriptor, populateSegment, districtAt, phaseAt } from './segment-generator.js';
 import { checkCollisions, updateMovers } from './collisions.js';
 import { loadSave, commitSave } from './save.js';
-import { missionEvent, addCoins, addTokens, initMissions } from './progression.js';
+import { missionEvent, addCoins, addTokens, initMissions, powDurations, takeConsumables } from './progression.js';
 
 export const STATES = { BOOT: 'boot', HOME: 'home', COUNTDOWN: 'countdown', RUNNING: 'running', PAUSED: 'paused', CRASHED: 'crashed', RESULTS: 'results' };
 let state = STATES.BOOT;
@@ -50,11 +50,36 @@ export function startRun(seed, daily) {
     countdownT: 1.3,
     groupsSinceRecovery: 0, speedForValidation: 22,
     lastRebase: 0, god: false, daily: !!daily,
+    powDur: powDurations(),          // store upgrades folded in
+    cashMult: 1, usedItems: null,
   };
   genAhead();
   if (G.tutorial) placeTutorial();
+
+  /* store consumables (never on Daily — that board must stay comparable) */
+  const use = takeConsumables(!!daily || G.tutorial);
+  G.usedItems = use;
+  if (use.doubler) G.cashMult = 2;
+  if (use.shield) G.pows.shield = G.powDur.shield;
+  if (use.headstart) applyHeadStart();
   setState(STATES.COUNTDOWN);
   cb.hud && cb.hud(G, true);
+}
+
+/* jump the runner forward past the warm-up, retiring everything skipped */
+function applyHeadStart() {
+  G.dist = HEADSTART_M;
+  while (G.segs[G.segIdx] && G.dist > G.segs[G.segIdx].start + G.segs[G.segIdx].len) {
+    G.segIdx++; G.turned = false;
+    const ns = G.segs[G.segIdx];
+    if (ns && ns.alleyPending) resolveSplit(ns);
+  }
+  genAhead();
+  for (const o of G.obs) if (o.d < G.dist + 2) o.done = true;
+  for (const c of G.coins) if (c.d < G.dist + 2) c.taken = true;
+  for (const arr of [G.tokens, G.letters, G.powsList]) for (const it of arr) if (it.d < G.dist + 2) it.taken = true;
+  pruneBehind();
+  G.score.dist = 0;                // the skipped metres are not earned score
 }
 
 function finishRun() {
@@ -288,6 +313,7 @@ function crash(cause, force) {
   if (G.invuln > 0 && !force) return;
   if (G.pows.shield > 0) {
     G.pows.shield = 0;
+    G.usedShield = true;
     G.invuln = TUNE.invulnT; G.stumbleT = TUNE.shieldRecover; G.shake = 0.4;
     cb.callout && cb.callout('🛡️ FRESH START!', 'shield');
     cb.sfx && cb.sfx('shieldSave');
@@ -477,8 +503,9 @@ function collectPickups(dt) {
   if (got) {
     G.comboN = (G.comboT > 0) ? (G.comboN || 0) + got : got;
     G.comboT = 1.6;
-    G.run.coins += got;
-    G.score.coins += got * TUNE.coinScore;
+    const gain = got * G.cashMult;
+    G.run.coins += gain;
+    G.score.coins += gain * TUNE.coinScore;
     cb.sfx && cb.sfx('coin', G.comboN);
     fx('coin');
     if ((G.comboN % 6) === 0) addStyle('coinLine');
@@ -518,7 +545,7 @@ function collectPickups(dt) {
     if (p.d - G.dist > 3) break;
     if (Math.abs(p.d - G.dist) < 1.6 && Math.abs(G.laneX - laneC(p.lane)) < 1.15) {
       p.taken = true; if (p.mesh) p.mesh.visible = false;
-      G.pows[p.kind] = TUNE.powDur[p.kind];
+      G.pows[p.kind] = G.powDur[p.kind];
       cb.sfx && cb.sfx('pow');
       fx('pow', { kind: p.kind });
     }
