@@ -1,7 +1,7 @@
 /* HOOD RUN — ui.js
    Screens + HUD. Owns the DOM only; game rules stay in game.js. */
 
-import { COSMETICS, POWERUPS, TUNE, DISTRICTS, dateKey } from './data.js';
+import { COSMETICS, POWERUPS, TUNE, DISTRICTS, DISTRICT_ORDER, DISTRICT_LEN, dateKey } from './data.js';
 import { loadSave, commitSave, resetSave } from './save.js';
 import { activeMissions, buyCosmetic, equipCosmetic, onToast } from './progression.js';
 import { setVolumes, sfx } from './audio.js';
@@ -46,9 +46,10 @@ export function refreshHome() {
   $('beststrip').innerHTML = s.high
     ? `Best: <b>${s.high.toLocaleString()}</b> · Farthest: <b>${s.bestDist}m</b> · <span class="coin">●</span> ${s.coins} · 🔷 ${s.tokens}`
     : 'First run — the block is waiting.';
-  const discovered = Math.min(3, 1 + Math.floor(s.lifetime.dist / 850));
-  $('district-strip').textContent = ['block', 'market', 'downtown'].slice(0, discovered)
-    .map(d => DISTRICTS[d].icon + ' ' + DISTRICTS[d].label).join('  ·  ');
+  const discovered = Math.min(DISTRICT_ORDER.length, 1 + Math.floor(s.lifetime.dist / DISTRICT_LEN));
+  $('district-strip').textContent = DISTRICT_ORDER.slice(0, discovered)
+    .map(d => DISTRICTS[d].icon + ' ' + DISTRICTS[d].label).join('  ·  ')
+    + (discovered < DISTRICT_ORDER.length ? '  ·  ???' : '');
   const dailyDone = s.daily.date === dateKey();
   const streak = s.daily.streak > 1 ? ` · 🔥${s.daily.streak}-day streak` : '';
   $('daily-strip').innerHTML = dailyDone

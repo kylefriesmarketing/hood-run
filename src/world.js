@@ -419,6 +419,36 @@ function mkFireEscape() {
   }
   return g;
 }
+function mkLanternString(span) {   // paper lanterns strung across the night market
+  const g = new THREE.Group();
+  const cols = [0xff4f4f, 0xff9a3c, 0xffd23c, 0xff6ab0];
+  g.add(box(span, 0.04, 0.04, 0x2a2430, 0, 0, 0));
+  const n = Math.max(4, Math.round(span / 1.6));
+  for (let i = 0; i < n; i++) {
+    const x = -span / 2 + (i + 0.5) * (span / n);
+    const sag = -Math.sin((i + 0.5) / n * Math.PI) * 0.5;
+    const col = cols[i % cols.length];
+    const lan = new THREE.Mesh(new THREE.SphereGeometry(0.3, 10, 8), new THREE.MeshBasicMaterial({ color: col }));
+    lan.scale.set(1, 0.82, 1); lan.position.set(x, sag - 0.36, 0); g.add(lan);
+    g.add(box(0.1, 0.1, 0.1, 0x3a2a20, x, sag - 0.62, 0));
+  }
+  return g;
+}
+function mkNeonSign() {
+  const words = ['NOODLES', 'OPEN', '24H', 'RAMEN', 'BAO', 'TEA', 'GRILL'];
+  const cols = ['#ff4f9a', '#3be8ff', '#7bff5e', '#ffd23c'];
+  const col = pick(cols);
+  const t = tex(128, 64, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    g.fillStyle = 'rgba(10,6,20,.85)'; g.fillRect(0, 0, w, h);
+    g.strokeStyle = col; g.lineWidth = 3; g.strokeRect(6, 6, w - 12, h - 12);
+    g.shadowColor = col; g.shadowBlur = 14;
+    g.fillStyle = col; g.font = 'bold 26px Arial'; g.textAlign = 'center';
+    g.fillText(pick(words), w / 2, h / 2 + 9);
+  });
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 1.0), new THREE.MeshBasicMaterial({ map: t, transparent: true }));
+  return m;
+}
 function mkNeighbor() { // simple sidewalk person (waving loop handled by view)
   const g = new THREE.Group();
   const skin = pick([0x8d5a3b, 0x6b4226, 0xc79a6b, 0xa06a44]);
@@ -834,6 +864,11 @@ function buildStreetDressing(g, seg, d, opts, dd) {
         g.add(bld);
         if (Math.random() < 0.25 * dd && !d.decor?.glass) { const fe = mkFireEscape(); fe.position.set(side * (WALL_X - 0.5), 0, -(dpos + w / 2)); fe.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2; g.add(fe); }
         if (d.decor?.stoops && Math.random() < 0.35 * dd) { const st = mkStoop(); st.position.set(side * (WALL_X - 0.9), 0.24, -(dpos + w / 2)); st.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2; g.add(st); }
+        if (d.decor?.neon && Math.random() < 0.6 * dd) {          // glowing shopfront neon
+          const ns = mkNeonSign();
+          ns.position.set(side * (WALL_X - 0.15), rand(2.4, 3.6), -(dpos + rand(2, Math.max(2.2, w - 2))));
+          ns.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2; ns.userData.ownGeo = true; g.add(ns);
+        }
         if (d.decor?.posters && Math.random() < 0.5 * dd) {
           const po = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 1.2), new THREE.MeshBasicMaterial({ map: posterTex() }));
           po.position.set(side * (WALL_X + 0.22), 1.6, -(dpos + rand(2, w - 2)));
@@ -859,6 +894,16 @@ function buildStreetDressing(g, seg, d, opts, dd) {
       else if (roll < 0.72) { const be = mkBench(); be.position.set(side * (HALF + 1.7), 0.24, -d2); be.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2; g.add(be); }
       else if (roll < 0.82) { const n = mkNeighbor(); n.position.set(side * (HALF + rand(1.2, 2.2)), 0.24, -d2); n.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2; g.userData.neighbors = g.userData.neighbors || []; g.userData.neighbors.push(n); g.add(n); }
     }
+  }
+  // paper lanterns strung across the night market
+  if (d.decor?.lanterns) {
+    const lanterns = [];
+    for (let dpos = rand(10, 20); dpos < L - 10; dpos += rand(11, 18)) {
+      const ls = mkLanternString(ROAD_W + 3);
+      ls.position.set(0, rand(4.6, 5.4), -dpos); g.add(ls);
+      lanterns.push(ls);
+    }
+    g.userData.lanterns = lanterns;
   }
   // string lights (market)
   if (d.stringLights && Math.random() < 0.6 * dd) {
@@ -991,6 +1036,12 @@ export function animateSegments(segs, time, party) {
       const b = g.userData.bulbs[i];
       const s = party ? 1 + 0.5 * Math.max(0, Math.sin(time * 6 + i * 1.3)) : 1;
       b.scale.setScalar(s);
+    }
+    if (g.userData.lanterns) for (let i = 0; i < g.userData.lanterns.length; i++) {
+      const ls = g.userData.lanterns[i];
+      ls.rotation.z = Math.sin(time * 0.9 + i) * 0.035;            // gentle sway
+      const s = party ? 1 + 0.35 * Math.max(0, Math.sin(time * 7 + i * 0.9)) : 1;
+      ls.scale.set(1, s, s);
     }
     g.traverse?.call?.(g, () => {});                 // no-op guard
   }

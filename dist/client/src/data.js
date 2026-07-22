@@ -55,29 +55,29 @@ export const TUNE = {
    h = clearance height for jumps; strict slide = jump does NOT clear.
    stumble = non-lethal; slow = puddle-style flow break; move = lateral motion. */
 export const HAZARDS = {
-  pothole:  { clear: 'jump', h: 0.3,  depth: 1.0, lanes: 1, tier: 0, hit: 0.82, districts: ['block','market','downtown'] },
-  cones:    { clear: 'jump', h: 0.5,  depth: 0.9, lanes: 1, tier: 0, hit: 0.8, stumble: true, districts: ['block','market','downtown'] },
+  pothole:  { clear: 'jump', h: 0.3,  depth: 1.0, lanes: 1, tier: 0, hit: 0.82, districts: ['block','market','downtown','nightmarket'] },
+  cones:    { clear: 'jump', h: 0.5,  depth: 0.9, lanes: 1, tier: 0, hit: 0.8, stumble: true, districts: ['block','market','downtown','nightmarket'] },
   planter:  { clear: 'jump', h: 0.8,  depth: 1.0, lanes: 1, tier: 0, hit: 0.85, districts: ['block','market'] },
-  boxes:    { clear: 'jump', h: 0.95, depth: 1.1, lanes: 1, tier: 1, hit: 0.85, districts: ['block','market','downtown'] },
+  boxes:    { clear: 'jump', h: 0.95, depth: 1.1, lanes: 1, tier: 1, hit: 0.85, districts: ['block','market','downtown','nightmarket'] },
   grate:    { clear: 'jump', h: 0.25, depth: 1.4, lanes: 1, tier: 1, hit: 0.8, districts: ['block','downtown'] },
   bikerack: { clear: 'jump', h: 0.9,  depth: 0.8, lanes: 1, tier: 1, hit: 0.85, districts: ['block','downtown'] },
-  barrier:  { clear: 'jump', h: 0.95, depth: 0.7, lanes: 1, tier: 0, hit: 0.85, districts: ['block','market','downtown'] },
+  barrier:  { clear: 'jump', h: 0.95, depth: 0.7, lanes: 1, tier: 0, hit: 0.85, districts: ['block','market','downtown','nightmarket'] },
   hydrant:  { clear: 'jump', h: 0.75, depth: 0.8, lanes: 1, tier: 0, hit: 0.85, districts: ['block'] },
-  cart:     { clear: null,   depth: 2.0, lanes: 2, tier: 1, hit: 0.9, districts: ['market','block'] },
-  table:    { clear: null,   depth: 1.4, lanes: 1, tier: 1, hit: 0.9, districts: ['market'] },
-  stand:    { clear: null,   depth: 2.2, lanes: 2, tier: 2, hit: 0.9, districts: ['market'] },
+  cart:     { clear: null,   depth: 2.0, lanes: 2, tier: 1, hit: 0.9, districts: ['market','block','nightmarket'] },
+  table:    { clear: null,   depth: 1.4, lanes: 1, tier: 1, hit: 0.9, districts: ['market','nightmarket'] },
+  stand:    { clear: null,   depth: 2.2, lanes: 2, tier: 2, hit: 0.9, districts: ['market','nightmarket'] },
   parkedcar:{ clear: null,   depth: 2.4, lanes: 2, tier: 1, hit: 0.9, districts: ['block','downtown'] },
   dumpster: { clear: null,   depth: 1.9, lanes: 2, tier: 2, hit: 0.9, districts: ['downtown','block'] },
   scaffold: { clear: 'slide', h: 1.3, depth: 1.6, lanes: 3, tier: 1, hit: 0.9, strict: true, districts: ['downtown','block'] },
-  awning:   { clear: 'slide', h: 1.25, depth: 1.0, lanes: 2, tier: 1, hit: 0.88, districts: ['market'] },
+  awning:   { clear: 'slide', h: 1.25, depth: 1.0, lanes: 2, tier: 1, hit: 0.88, districts: ['market','nightmarket'] },
   clothesline:{ clear: 'slide', h: 1.2, depth: 0.5, lanes: 3, tier: 1, hit: 0.85, strict: true, districts: ['alley'] },
   gatebar:  { clear: 'slide', h: 1.3, depth: 0.8, lanes: 3, tier: 2, hit: 0.88, strict: true, districts: ['downtown'] },
   fence:    { clear: 'jump', h: 0.7,  depth: 0.5, lanes: 3, tier: 2, hit: 0.85, districts: ['block','alley'] },
-  puddle:   { clear: null,   depth: 1.6, lanes: 1, tier: 0, hit: 1.0, safe: true, districts: ['block','market','downtown','alley'] },
+  puddle:   { clear: null,   depth: 1.6, lanes: 1, tier: 0, hit: 1.0, safe: true, districts: ['block','market','downtown','alley','nightmarket'] },
   // movers (lateral motion; xv = lanes/s across)
-  rollbin:  { clear: null,   depth: 1.0, lanes: 1, tier: 2, hit: 0.85, move: 0.9, districts: ['market','downtown'] },
+  rollbin:  { clear: null,   depth: 1.0, lanes: 1, tier: 2, hit: 0.85, move: 0.9, districts: ['market','downtown','nightmarket'] },
   bball:    { clear: 'jump', h: 0.6, depth: 0.7, lanes: 1, tier: 1, hit: 0.8, move: 1.3, stumble: true, districts: ['block'] },
-  robot:    { clear: null,   depth: 0.9, lanes: 1, tier: 2, hit: 0.85, move: 0.55, stumble: true, districts: ['downtown','market'] },
+  robot:    { clear: null,   depth: 0.9, lanes: 1, tier: 2, hit: 0.85, move: 0.55, stumble: true, districts: ['downtown','market','nightmarket'] },
   // rooftop route — jump-focused (bible §4.3)
   acunit:   { clear: 'jump', h: 0.85, depth: 1.2, lanes: 1, tier: 0, hit: 0.85, districts: ['rooftop'] },
   skylight: { clear: 'jump', h: 0.45, depth: 1.6, lanes: 1, tier: 0, hit: 0.85, districts: ['rooftop'] },
@@ -118,6 +118,16 @@ export const DISTRICTS = {
     decor: { glass: true, subway: true, buslane: true, scaffolds: true },
     stringLights: false, buildingH: [14, 26],
   },
+  nightmarket: {
+    label: 'Night Market', icon: '🏮',
+    sky: 0x1a1832, fog: [0x241f42, 30, 140],
+    hemi: [0x6a5a9a, 0x2a2440, 0.85], sun: [0xffb86a, 0.35],
+    road: 0x2a2836, side: 0x5a5560, brickset: ['#4a3a52','#5c4460','#3f3348','#6a4a54'],
+    accent: '#ff4f9a', windowLit: 0.75,
+    signs: ["NOODLE HOUSE","DUMPLING BAR","NIGHT OWL CAFÉ","LANTERN GRILL","SWEET BUNS","KARAOKE"],
+    decor: { stands: true, tables: true, posters: true, murals: true, lanterns: true, neon: true },
+    stringLights: true, buildingH: [9, 16],
+  },
   alley: { // shortcut micro-district (inherits current district palette)
     label: 'Alley', icon: '🧺',
     coinMult: 2,
@@ -129,7 +139,7 @@ export const DISTRICTS = {
 };
 export const ROOF_H = 9;                  // how high the rooftop route sits
 export const ROOF_MIN_DIST = 600;         // rooftops are "introduced later"
-export const DISTRICT_ORDER = ['block', 'market', 'downtown'];
+export const DISTRICT_ORDER = ['block', 'market', 'downtown', 'nightmarket'];
 export const DISTRICT_LEN = 850;          // metres per district before rotating
 
 /* ---------- power-ups ---------- */
