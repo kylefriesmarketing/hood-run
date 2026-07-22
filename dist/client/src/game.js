@@ -311,6 +311,18 @@ function doSlide() {
   G.sliding = TUNE.slideT; G.slideStartD = G.dist;
   cb.sfx && cb.sfx('slide');
 }
+/* Failsafe hand-off. The opening is driven by the render loop, so anything that
+   starves rAF (hidden/background tab, a throttled or stalled frame loop) used to
+   freeze the countdown forever — leaving you standing inside the bank. This
+   completes the intro from a plain timer, which fires regardless. */
+export function forceStartIfStuck() {
+  if (state !== STATES.COUNTDOWN || !G) return false;
+  G.countdownT = 0;
+  if (!G.introSkip) G.dist = 0;
+  setState(STATES.RUNNING);
+  return true;
+}
+
 export function pauseGame() {
   if (state === STATES.RUNNING) setState(STATES.PAUSED);
   else if (state === STATES.PAUSED) setState(STATES.RUNNING);

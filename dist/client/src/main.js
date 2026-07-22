@@ -140,9 +140,16 @@ function onState(s) {
   if (s === STATES.RUNNING) { musicStart(); UI.hideScreens(); }
   else if (s === STATES.PAUSED) { musicStop(); UI.showScreen('paused'); }
   else if (s === STATES.CRASHED) { musicStop(); }
-  else if (s === STATES.COUNTDOWN) { UI.hideScreens(); introT = TUNE.introDur; baseYView = 0; }
+  else if (s === STATES.COUNTDOWN) {
+    UI.hideScreens(); introT = TUNE.introDur; baseYView = 0;
+    // timers still fire when rAF is starved, so this guarantees the hand-off
+    clearTimeout(introFailsafe);
+    introFailsafe = setTimeout(() => {
+      if (GAME.forceStartIfStuck()) console.warn('[hood-run] intro stalled — handed off via failsafe');
+    }, (TUNE.introDur + 1.2) * 1000);
+  }
   else if (s === STATES.HOME) { musicStop(); }
-  if (s !== STATES.COUNTDOWN) UI.showCountdown(null);
+  if (s !== STATES.COUNTDOWN) { clearTimeout(introFailsafe); UI.showCountdown(null); }
 }
 
 /* ---------------- input wiring ---------------- */
@@ -240,6 +247,7 @@ UI.initUI({
 
 /* ---------------- view ---------------- */
 let camAng = 0, playerAng = 0, viewTime = 0, whistleT = 3, partyFxT = 0, introT = 0, baseYView = 0;
+let introFailsafe = null;
 const camPos = new THREE.Vector3(), lookAt = new THREE.Vector3(), pPos = new THREE.Vector3(), oPos = new THREE.Vector3();
 const introPos = new THREE.Vector3(), introLook = new THREE.Vector3();
 const smooth = t => t * t * (3 - 2 * t);
@@ -431,14 +439,17 @@ function frame(now) {
   if (dt > 0.25) dt = 0.25;                      // tab stall clamp
   frameAvg = frameAvg * 0.95 + (dt * 1000) * 0.05;
 
-  if (!document.hidden || window.__hrTest) {
+  // The opening must keep advancing even in a hidden/throttled tab, or the
+  // hand-off never happens and the player is stranded inside the bank.
+  const visible = !document.hidden || window.__hrTest;
+  if (visible || GAME.getState() === STATES.COUNTDOWN) {
     if (!window.__hrManual) {
       acc += dt;
       let steps = 0;
       while (acc >= FIXED && steps < 6) { GAME.stepFixed(FIXED); acc -= FIXED; steps++; }
       if (steps === 6) acc = 0;
     }
-    updateView(dt);
+    if (visible) updateView(dt);
   }
   updateDebug(dt);
   W.renderer.render(W.scene, W.camera);
