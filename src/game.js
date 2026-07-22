@@ -68,11 +68,15 @@ export function startRun(seed, daily) {
     G.introSkip = true;
     G.countdownT = 1.1;
   } else {
-    G.dist = TUNE.introStart;      // start the very first frame at the doors
+    G.dist = introStartDist();     // first frame is already inside the lobby
   }
   setState(STATES.COUNTDOWN);
   cb.hud && cb.hud(G, true);
 }
+
+/* How far back down the track the opening starts. Derived from the velocity
+   ramp so the runner is at exactly speed0 the instant control passes to you. */
+export function introStartDist() { return -(TUNE.speed0 * TUNE.introDur / 2); }
 
 /* jump the runner forward past the warm-up, retiring everything skipped */
 function applyHeadStart() {
@@ -365,9 +369,13 @@ export function stepFixed(dt) {
        line, on the steps), so the hand-off at GO is seamless — no teleport. */
     G.countdownT -= dt;
     if (!G.introSkip) {
-      const p = 1 - Math.max(0, Math.min(1, G.countdownT / TUNE.introDur));
-      const eased = p * p * (3 - 2 * p);
-      G.dist = TUNE.introStart * (1 - eased);
+      /* Accelerate from a standstill to exactly the run's starting speed, so the
+         hand-off is velocity-continuous. A smoothstep eased to a STOP at the end
+         and then the run began at full speed — that discontinuity was the snap.
+         v(t) ramps 0..speed0, so distance covered = speed0 * T / 2. */
+      const T = TUNE.introDur;
+      const elapsed = Math.max(0, Math.min(T, T - G.countdownT));
+      G.dist = introStartDist() + TUNE.speed0 * elapsed * elapsed / (2 * T);
     }
     if (G.countdownT <= 0) {
       if (!G.introSkip) G.dist = 0;

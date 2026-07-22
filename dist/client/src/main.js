@@ -249,7 +249,6 @@ UI.initUI({
 let camAng = 0, playerAng = 0, viewTime = 0, whistleT = 3, partyFxT = 0, introT = 0, baseYView = 0;
 let introFailsafe = null;
 const camPos = new THREE.Vector3(), lookAt = new THREE.Vector3(), pPos = new THREE.Vector3(), oPos = new THREE.Vector3();
-const introPos = new THREE.Vector3(), introLook = new THREE.Vector3();
 const smooth = t => t * t * (3 - 2 * t);
 const dogCameo = W.mkDogCameo(); W.scene.add(dogCameo); dogCameo.visible = false;
 const speedLinesEl = document.getElementById('speed-lines');
@@ -309,7 +308,9 @@ function updateView(dt) {
   if (st === STATES.CRASHED) poseRunner({ mode: 'crash', dt, time: viewTime, stumble: 0 });
   else if (st === STATES.RESULTS) poseRunner({ mode: 'celebrate', time: viewTime, stumble: 0 });
   else if (st === STATES.COUNTDOWN) {           // sprinting out of the bank
-    G.runPhase += dt * 16;
+    // stride rate follows his real speed as he accelerates, so no windmilling
+    const introV = TUNE.speed0 * (1 - Math.max(0, G.countdownT) / TUNE.introDur);
+    G.runPhase += dt * (4 + introV * 0.9);
     poseRunner({ mode: 'run', phase: G.runPhase, time: viewTime, stumble: 0, lean: 0 });
   }
   else if (st === STATES.HOME) poseRunner({ mode: 'idle', time: viewTime, stumble: 0 });
@@ -346,15 +347,14 @@ function updateView(dt) {
   }
 
   /* the patrol — visible whenever the gap is short enough to be seen */
-  const chasing = st === STATES.RUNNING || st === STATES.CRASHED || st === STATES.COUNTDOWN;
+  // Hidden during the opening: the camera is behind Jay, so officers behind him
+  // would sit between camera and runner and fill the screen. They pour out after.
+  const chasing = st === STATES.RUNNING || st === STATES.CRASHED;
   for (let i = 0; i < officers.length; i++) {
     const om = officers[i];
     om.visible = chasing;
     if (!chasing) continue;
-    // during the opening they pile out of the doors right on his heels
-    const od = st === STATES.COUNTDOWN
-      ? G.dist - (2.2 + i * 1.1)
-      : G.dist - G.gap - i * 1.5;
+    const od = G.dist - G.gap - i * 1.5;
     const tLX = G.laneX + (i - 1) * 0.85;
     om.userData.lx = lerpNum(om.userData.lx ?? tLX, tLX, 1 - Math.exp(-dt * 4));
     GAME.worldPos(od, Math.max(-3, Math.min(3, om.userData.lx)), 0, oPos);
@@ -387,22 +387,14 @@ function updateView(dt) {
   camPos.set(pPos.x - fx * 6.8, pPos.y + 3.3 + G.py * 0.35, pPos.z - fz * 6.8);
   lookAt.set(pPos.x + fx * 9, pPos.y + 1.4 + G.py * 0.5, pPos.z + fz * 9);
 
-  /* opening beat: burst out of the bank. Camera sits ahead of Jay looking
-     back at him + the bank, then swings to the chase cam as the run begins. */
+  /* The opening uses the ORDINARY chase camera — behind Jay, facing the way he
+     runs. A front-facing cinematic made him read as running backwards and
+     needed a swing at the end that felt like a snap. */
   introT = Math.max(0, introT - dt);
-  // hold the cinematic framing, then swing behind him and settle before GO
-  const introK = smooth(Math.min(1, Math.max(0, (introT - 0.8) / 1.5)));
-  if (introK > 0.001) {
-    // ahead of Jay at chest height, framing HIM with the bank as the backdrop
-    introPos.set(pPos.x + fx * 7, pPos.y + 2.3, pPos.z + fz * 7);
-    introLook.set(pPos.x - fx * 3, pPos.y + 1.8, pPos.z - fz * 3);
-    camPos.lerp(introPos, introK);
-    lookAt.lerp(introLook, introK);
-  }
   if (G.shake > 0 && !rm) { camPos.x += (Math.random() - 0.5) * G.shake * 0.7; camPos.y += (Math.random() - 0.5) * G.shake * 0.6; }
-  // snap on the opening frame so the cinematic doesn't start mid-glide
+  // snap on the opening frame so we don't glide in from the last camera pose
   if (introT > TUNE.introDur - 0.06) W.camera.position.copy(camPos);
-  else W.camera.position.lerp(camPos, 1 - Math.exp(-dt * (introK > 0.05 ? 9 : 14)));
+  else W.camera.position.lerp(camPos, 1 - Math.exp(-dt * 14));
   W.camera.lookAt(lookAt);
   const fovKick = rm ? 0.25 : 0.7;
   W.camera.fov = 60 + Math.max(0, G.speed - TUNE.speed0) * fovKick; W.camera.updateProjectionMatrix();
@@ -422,8 +414,8 @@ function updateView(dt) {
 
   /* countdown digits */
   if (st === STATES.COUNTDOWN) {
-    // let the cinematic breathe, then count the hand-off in over the last 1.5s
-    UI.showCountdown(G.countdownT > 1.5 ? null : Math.max(1, Math.ceil(G.countdownT / 0.5)));
+    // counts across the whole run-out so it lands exactly as control passes over
+    UI.showCountdown(Math.max(1, Math.ceil(G.countdownT / (TUNE.introDur / 3))));
   }
 }
 function lerpAngle(a, b, t) { let d = b - a; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; return a + d * t; }

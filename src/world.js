@@ -488,30 +488,59 @@ export function mkOfficer() {
   return g;
 }
 
-/* City Trust Bank facade — the run's starting point */
+/* City Trust Bank — an open-fronted LOBBY, not a slab. The run opens with the
+   chase camera behind Jay inside this room, so it has to be hollow: doors
+   already open, walls and ceiling around him, and enough depth that the camera
+   (~7 behind him) is still indoors. Local z 0 is the doorway plane; +z is
+   deeper inside. */
+export const BANK_DOOR_W = 7, BANK_DEPTH = 20;
 export function mkBankFacade() {
   const g = new THREE.Group();
-  const stone = 0xb8ad98;
-  g.add(box(26, 14, 8, stone, 0, 7, 3));                                  // main mass
-  for (let i = 0; i < 5; i++) {
-    const col = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.6, 8.4, 10), cmat(0xd0c6b0));
-    col.position.set(-8 + i * 4, 4.2, -1.6); g.add(col);
+  const stone = 0xb8ad98, inner = 0x9d9482, trim = 0xd0c6b0;
+  const W = 26, H = 13, D = BANK_DEPTH, halfDoor = BANK_DOOR_W / 2;
+
+  /* ---- front wall, split around an already-open doorway ---- */
+  const jamb = (W - BANK_DOOR_W) / 2;
+  for (const s of [-1, 1]) g.add(box(jamb, H, 1.2, stone, s * (halfDoor + jamb / 2), H / 2, 0));
+  g.add(box(BANK_DOOR_W, H - 7, 1.2, stone, 0, 7 + (H - 7) / 2, 0));            // lintel
+  for (const s of [-1, 1]) {                                                    // open glass door leaves
+    const leaf = box(0.16, 6.6, 2.6, 0x4a6a70, s * (halfDoor - 0.1), 3.3, 1.4);
+    leaf.rotation.y = s * 0.42; g.add(leaf);
   }
-  const ped = box(24, 2.6, 1.2, 0xd0c6b0, 0, 9.6, -1.4); ped.rotation.x = 0.0; g.add(ped);
+
+  /* ---- the lobby itself ---- */
+  g.add(box(W, 0.2, D, 0x8a8272, 0, 0.02, D / 2));                              // floor
+  g.add(box(W, 0.6, D, inner, 0, H, D / 2));                                    // ceiling
+  for (const s of [-1, 1]) g.add(box(1.0, H, D, inner, s * (W / 2 - 0.5), H / 2, D / 2));
+  g.add(box(W, H, 1.0, inner, 0, H / 2, D));                                    // back wall
+  // vault door on the back wall — the reason he's in a hurry
+  const vault = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.6, 0.6, 20), cmat(0x6a7079));
+  vault.rotation.x = Math.PI / 2; vault.position.set(0, 4.2, D - 0.8); g.add(vault);
+  g.add(box(1.0, 1.0, 0.7, 0x9aa2ab, 0, 4.2, D - 1.1));
+  for (const s of [-1, 1]) g.add(box(5.5, 1.2, 1.6, trim, s * 7, 1.4, D * 0.45)); // teller counters
+  for (let i = 0; i < 4; i++)                                                   // ceiling lights
+    g.add(box(3.2, 0.16, 0.7, 0, 0, H - 0.5, 3 + i * 4.5, new THREE.MeshBasicMaterial({ color: 0xfff3d0 })));
+
+  /* ---- street side: columns, sign, steps, spilled cash ---- */
+  // flanking only — a column in the middle would sit dead-centre in the doorway
+  // and block the view straight down the street during the opening
+  for (const x of [-10.5, -6.2, 6.2, 10.5]) {
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.6, 8.4, 10), cmat(trim));
+    col.position.set(x, 4.2, -1.6); g.add(col);
+  }
+  g.add(box(24, 2.6, 1.2, trim, 0, 9.6, -1.4));
   const sign = new THREE.Mesh(new THREE.PlaneGeometry(12, 1.6), new THREE.MeshBasicMaterial({
     map: tex(384, 52, (g2, w, h) => {
       g2.fillStyle = '#4a4032'; g2.fillRect(0, 0, w, h);
       g2.fillStyle = '#ffd23c'; g2.font = 'bold 34px Georgia'; g2.textAlign = 'center';
       g2.fillText('CITY TRUST BANK', w / 2, 38);
     }) }));
-  sign.position.set(0, 9.6, -2.05); sign.rotation.y = Math.PI; g.add(sign);   // face the street (the intro camera)
+  sign.position.set(0, 9.6, -2.05); sign.rotation.y = Math.PI; g.add(sign);
   for (let i = 0; i < 3; i++) g.add(box(22 - i * 1.6, 0.3, 1.2, 0x9a9082, 0, 0.15 + i * 0.3, -2.4 - i * 0.5));
-  const lamp = box(0.4, 0.4, 0.4, 0, -9, 11.5, -1.6, new THREE.MeshBasicMaterial({ color: 0xff4040 }));
-  lamp.userData.alarmLamp = true; g.add(lamp);                            // silent-alarm beacon
-  const doors = box(4.4, 5.2, 0.4, 0x3a3026, 0, 2.6, -1.8); g.add(doors);
-  // scattered escaped bills on the steps
-  for (let i = 0; i < 7; i++) {
-    const bill = box(0.5, 0.02, 0.26, 0x7ac47a, rand(-4, 4), 0.1, rand(-3.4, -5.4));
+  const lamp = box(0.4, 0.4, 0.4, 0, -9, 10.8, -1.6, new THREE.MeshBasicMaterial({ color: 0xff4040 }));
+  lamp.userData.alarmLamp = true; g.add(lamp);
+  for (let i = 0; i < 9; i++) {                                                 // spilled bills
+    const bill = box(0.5, 0.02, 0.26, 0x7ac47a, rand(-5, 5), 0.1, rand(-5.4, 3));
     bill.rotation.y = rand(0, 3); g.add(bill);
   }
   return g;
@@ -786,7 +815,8 @@ export function buildSegment(seg, opts) {
     g.add(patch);
     if (opts.first) {
       const p0 = patch.clone(); p0.position.set(0, 0.012, 0); g.add(p0);
-      const bank = mkBankFacade(); bank.position.set(0, 0, 13); g.add(bank);
+      // doorway plane just behind the start line; the lobby runs back from there
+      const bank = mkBankFacade(); bank.position.set(0, 0, 8); g.add(bank);
     }
   }
 
