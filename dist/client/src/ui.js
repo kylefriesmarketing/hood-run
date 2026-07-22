@@ -174,7 +174,7 @@ function renderMissions() {
 /* ---------------- runner screen (cosmetics) ---------------- */
 function renderRunner() {
   const s = loadSave();
-  const slots = [['skin', 'Appearance'], ['outfit', 'Outfit'], ['shoes', 'Shoes'], ['hat', 'Hat'], ['trail', 'Trail']];
+  const slots = [['skin', 'Appearance'], ['outfit', 'Outfit'], ['shoes', 'Shoes'], ['hat', 'Hat'], ['trail', 'Trail'], ['pose', 'Victory Pose']];
   $('runner-coins').innerHTML = `<span class="coin">●</span> ${s.coins}`;
   $('runner-slots').innerHTML = slots.map(([slot, label]) => {
     const items = COSMETICS[slot].map(c => {

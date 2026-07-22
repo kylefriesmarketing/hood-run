@@ -6,7 +6,7 @@ import * as THREE from '../lib/three.module.js';
 import { COSMETICS } from './data.js';
 import { scene, box, blobShadow, cmat } from './world.js';
 
-let mesh = null, parts = null, trailPool = [], trailKind = 'none', trailT = 0;
+let mesh = null, parts = null, trailPool = [], trailKind = 'none', trailT = 0, poseKind = 'cheer';
 
 function cosmeticById(slot, id) {
   return COSMETICS[slot].find(c => c.id === id) || COSMETICS[slot][0];
@@ -19,6 +19,7 @@ export function buildRunner(equipped) {
   const hat = cosmeticById('hat', equipped.hat);
   const skin = cosmeticById('skin', equipped.skin).color;
   trailKind = cosmeticById('trail', equipped.trail).kind;
+  poseKind = cosmeticById('pose', equipped.pose).kind;
 
   mesh = new THREE.Group();
   const body = new THREE.Group(); mesh.add(body);
@@ -39,6 +40,17 @@ export function buildRunner(equipped) {
   } else if (hat.kind === 'beanie') {
     body.add(box(0.46, 0.2, 0.46, hat.color, 0, 1.93, 0));
     body.add(box(0.14, 0.14, 0.14, hat.color, 0, 2.06, 0));
+  } else if (hat.kind === 'bucket') {
+    body.add(box(0.48, 0.18, 0.48, hat.color, 0, 1.94, 0));
+    body.add(box(0.68, 0.06, 0.68, hat.color, 0, 1.86, 0));      // all-round brim
+  } else if (hat.kind === 'visor') {
+    body.add(box(0.48, 0.1, 0.48, hat.color, 0, 1.9, 0));
+    body.add(box(0.48, 0.05, 0.26, hat.color, 0, 1.87, 0.31));
+    body.add(box(0.44, 0.14, 0.44, 0x1c1410, 0, 1.97, 0));       // hair above the visor
+  } else if (hat.kind === 'phones') {
+    body.add(box(0.44, 0.14, 0.44, 0x1c1410, 0, 1.95, 0));       // hair
+    body.add(box(0.5, 0.07, 0.16, hat.color, 0, 2.03, 0));       // headband
+    for (const s of [-1, 1]) body.add(box(0.1, 0.22, 0.24, hat.color, s * 0.25, 1.82, 0));
   } else {
     body.add(box(0.44, 0.14, 0.44, 0x1c1410, 0, 1.95, 0)); // hair
   }
@@ -61,6 +73,11 @@ export function buildRunner(equipped) {
       let m;
       if (trailKind === 'spark') {
         m = new THREE.Mesh(new THREE.OctahedronGeometry(0.12, 0), new THREE.MeshBasicMaterial({ color: 0xffd23c, transparent: true, opacity: 0 }));
+      } else if (trailKind === 'coins') {
+        m = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.03, 10), new THREE.MeshBasicMaterial({ color: 0xffd86a, transparent: true, opacity: 0 }));
+        m.rotation.x = Math.PI / 2;
+      } else if (trailKind === 'petal') {
+        m = new THREE.Mesh(new THREE.CircleGeometry(0.11, 6), new THREE.MeshBasicMaterial({ color: 0xff9ec6, transparent: true, opacity: 0, side: THREE.DoubleSide }));
       } else {
         m = new THREE.Mesh(new THREE.PlaneGeometry(0.36, 0.36), new THREE.MeshBasicMaterial({
           map: noteTex(), transparent: true, opacity: 0, side: THREE.DoubleSide }));
@@ -111,9 +128,26 @@ export function poseRunner(p) {
     b.legL.rotation.x = 0; b.legR.rotation.x = 0;
     b.armL.rotation.x = Math.sin(p.time * 2) * 0.08; b.armR.rotation.x = -Math.sin(p.time * 2) * 0.08;
   } else if (p.mode === 'celebrate') {
-    b.body.rotation.x = 0; b.body.position.y = Math.abs(Math.sin(p.time * 6)) * 0.22;
-    b.armL.rotation.x = -2.8; b.armR.rotation.x = -2.8;
-    b.legL.rotation.x = 0; b.legR.rotation.x = 0;
+    b.legL.rotation.x = 0; b.legR.rotation.x = 0; b.body.rotation.x = 0;
+    const t = p.time;
+    if (poseKind === 'flex') {                       // both arms curled up, slow bounce
+      b.body.position.y = Math.abs(Math.sin(t * 3)) * 0.06;
+      b.armL.rotation.x = -1.5; b.armR.rotation.x = -1.5;
+      b.armL.rotation.z = 1.1; b.armR.rotation.z = -1.1;
+    } else if (poseKind === 'bow') {                 // deep bow, arms swept back
+      const dip = (Math.sin(t * 2) * 0.5 + 0.5) * 0.5;
+      b.body.rotation.x = 0.5 + dip; b.body.position.y = -0.1;
+      b.armL.rotation.x = 0.9; b.armR.rotation.x = 0.9;
+      b.armL.rotation.z = 0.4; b.armR.rotation.z = -0.4;
+    } else if (poseKind === 'point') {               // one arm out, other on hip
+      b.body.position.y = Math.abs(Math.sin(t * 4)) * 0.1;
+      b.armL.rotation.x = -0.4; b.armL.rotation.z = 0.9;
+      b.armR.rotation.x = -1.6; b.armR.rotation.z = -0.25;
+    } else {                                         // cheer — hands up
+      b.body.position.y = Math.abs(Math.sin(t * 6)) * 0.22;
+      b.armL.rotation.x = -2.8; b.armR.rotation.x = -2.8;
+      b.armL.rotation.z = 0; b.armR.rotation.z = 0;
+    }
   } else { // run
     const sw = Math.sin(p.phase), swA = Math.sin(p.phase + Math.PI);
     b.body.rotation.x = 0.16; b.body.position.y = Math.abs(Math.sin(p.phase)) * 0.07;
