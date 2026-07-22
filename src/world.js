@@ -465,6 +465,32 @@ function mkNeighbor() { // simple sidewalk person (waving loop handled by view)
   g.add(blobShadow(0.7));
   return g;
 }
+/* squad car — black-and-white with a strobing light bar. userData.lights is
+   picked up by animateSegments so the bar flashes red/blue. */
+export function mkPoliceCar() {
+  const g = new THREE.Group();
+  const white = 0xe8ecf2, navy = 0x1e2a4a;
+  g.add(box(1.85, 0.52, 4.3, white, 0, 0.52, 0));                 // body
+  g.add(box(1.87, 0.42, 1.5, navy, 0, 0.5, 0.35));                // door panel
+  g.add(box(1.62, 0.46, 2.1, white, 0, 0.96, -0.15));             // cabin
+  g.add(box(1.64, 0.34, 1.9, 0x1a2634, 0, 0.99, -0.15, cmat(0x1a2634)));
+  const wm = cmat(0x14141a);
+  for (const [x, z] of [[-0.87, 1.4], [0.87, 1.4], [-0.87, -1.4], [0.87, -1.4]]) {
+    const w = new THREE.Mesh(new THREE.CylinderGeometry(0.31, 0.31, 0.2, 10), wm);
+    w.rotation.z = Math.PI / 2; w.position.set(x, 0.31, z); g.add(w);
+  }
+  // light bar
+  g.add(box(1.2, 0.1, 0.28, 0x2a2e36, 0, 1.24, -0.15));
+  const red = box(0.5, 0.18, 0.3, 0, -0.3, 1.33, -0.15, new THREE.MeshBasicMaterial({ color: 0xff2a2a }));
+  const blue = box(0.5, 0.18, 0.3, 0, 0.3, 1.33, -0.15, new THREE.MeshBasicMaterial({ color: 0x3a6aff }));
+  g.add(red); g.add(blue);
+  g.userData.lights = { red, blue };
+  // livery + headlights
+  g.add(box(0.9, 0.22, 0.02, 0x2a3a6e, 0, 0.62, 2.16));
+  for (const s of [-1, 1]) g.add(box(0.3, 0.1, 0.1, 0, s * 0.6, 0.6, 2.17, new THREE.MeshBasicMaterial({ color: 0xffeec0 })));
+  return g;
+}
+
 /* patrol officer — cartoon beat cop, strictly nonviolent chaser */
 export function mkOfficer() {
   const g = new THREE.Group();
@@ -536,7 +562,6 @@ export function mkBankFacade() {
       g2.fillText('CITY TRUST BANK', w / 2, 38);
     }) }));
   sign.position.set(0, 9.6, -2.05); sign.rotation.y = Math.PI; g.add(sign);
-  for (let i = 0; i < 3; i++) g.add(box(22 - i * 1.6, 0.3, 1.2, 0x9a9082, 0, 0.15 + i * 0.3, -2.4 - i * 0.5));
   const lamp = box(0.4, 0.4, 0.4, 0, -9, 10.8, -1.6, new THREE.MeshBasicMaterial({ color: 0xff4040 }));
   lamp.userData.alarmLamp = true; g.add(lamp);
   for (let i = 0; i < 9; i++) {                                                 // spilled bills
@@ -817,6 +842,35 @@ export function buildSegment(seg, opts) {
       const p0 = patch.clone(); p0.position.set(0, 0.012, 0); g.add(p0);
       // doorway plane just behind the start line; the lobby runs back from there
       const bank = mkBankFacade(); bank.position.set(0, 0, 8); g.add(bank);
+
+      /* Response outside the bank. Everything stays clear of |x| < 5 because the
+         runner's path down the middle (and the three lanes) must never be
+         blocked — this is set dressing for the opening, not an obstacle. */
+      const lights = [];
+      // all z < 7 — the lobby front wall sits at z 7.4..8.6, so anything deeper
+      // than that would be parked INSIDE the bank
+      // Two flanking the doors, two pulled up kerbside down the street so he
+      // sprints past them. Negative z is forward along the run.
+      const squads = [
+        { x: -7.0, z: 2.4, r: 0.42 }, { x: 7.2, z: 4.6, r: -0.5 },
+        { x: -6.1, z: -7, r: 0.34 }, { x: 6.2, z: -16, r: -0.3 },
+      ];
+      for (const s of squads) {
+        const car = mkPoliceCar();
+        car.position.set(s.x, 0, s.z); car.rotation.y = s.r;
+        g.add(car);
+        if (car.userData.lights) lights.push(car.userData.lights);
+      }
+      // officers taking cover behind the cars, facing the doors
+      // |x| >= 5.6 keeps every figure clear of the outer lane (lane centre 2.2
+      // plus the runner's half width), so he never clips through one
+      for (const o of [{ x: -5.7, z: 3.2 }, { x: 5.8, z: 5.6 }, { x: -5.7, z: -9.5 }, { x: 5.9, z: -13.5 }]) {
+        const cop = mkOfficer();
+        cop.position.set(o.x, 0, o.z);
+        cop.rotation.y = Math.atan2(0 - o.x, 5 - o.z);          // turn toward the entrance
+        g.add(cop);
+      }
+      g.userData.policeLights = lights;
     }
   }
 
@@ -1091,6 +1145,17 @@ export function animateSegments(segs, time, party) {
       const b = g.userData.bulbs[i];
       const s = party ? 1 + 0.5 * Math.max(0, Math.sin(time * 6 + i * 1.3)) : 1;
       b.scale.setScalar(s);
+    }
+    if (g.userData.policeLights) {
+      // alternating red/blue strobe, offset per car so they don't pulse in unison
+      for (let i = 0; i < g.userData.policeLights.length; i++) {
+        const L = g.userData.policeLights[i];
+        const phase = Math.sin(time * 9 + i * 1.7) > 0;
+        L.red.scale.setScalar(phase ? 1.35 : 0.7);
+        L.blue.scale.setScalar(phase ? 0.7 : 1.35);
+        L.red.material.color.setHex(phase ? 0xff5555 : 0x7a1010);
+        L.blue.material.color.setHex(phase ? 0x16307a : 0x6a92ff);
+      }
     }
     if (g.userData.lanterns) for (let i = 0; i < g.userData.lanterns.length; i++) {
       const ls = g.userData.lanterns[i];
