@@ -40,8 +40,9 @@ function meshCb(kind, item, seg, vinfo) {
     return;
   }
   if (kind === 'alleyGroup') {
+    const roof = item.splitKind === 'rooftop';
     const shadow = Object.assign({}, item, { alley: true, group: null });
-    W.buildSegment(shadow, segOpts(item, false));
+    W.buildSegment(shadow, Object.assign(segOpts(item, false), { roof }));
     item.alleyGroup = shadow.group;
     item.alleyGroup.visible = false;
     return;
@@ -139,7 +140,7 @@ function onState(s) {
   if (s === STATES.RUNNING) { musicStart(); UI.hideScreens(); }
   else if (s === STATES.PAUSED) { musicStop(); UI.showScreen('paused'); }
   else if (s === STATES.CRASHED) { musicStop(); }
-  else if (s === STATES.COUNTDOWN) { UI.hideScreens(); introT = 1.9; }
+  else if (s === STATES.COUNTDOWN) { UI.hideScreens(); introT = 1.9; baseYView = 0; }
   else if (s === STATES.HOME) { musicStop(); }
   if (s !== STATES.COUNTDOWN) UI.showCountdown(null);
 }
@@ -185,7 +186,7 @@ UI.initUI({
 });
 
 /* ---------------- view ---------------- */
-let camAng = 0, playerAng = 0, viewTime = 0, whistleT = 3, partyFxT = 0, introT = 0;
+let camAng = 0, playerAng = 0, viewTime = 0, whistleT = 3, partyFxT = 0, introT = 0, baseYView = 0;
 const camPos = new THREE.Vector3(), lookAt = new THREE.Vector3(), pPos = new THREE.Vector3(), oPos = new THREE.Vector3();
 const introPos = new THREE.Vector3(), introLook = new THREE.Vector3();
 const smooth = t => t * t * (3 - 2 * t);
@@ -235,8 +236,12 @@ function updateView(dt) {
   playerAng = lerpAngle(playerAng, targetAng, 1 - Math.exp(-dt * 10));
 
   GAME.worldPos(G.dist, G.laneX, 0, pPos);
+  // smooth the climb/drop between street level and the rooftop route
+  baseYView += (pPos.y - baseYView) * (1 - Math.exp(-dt * 6));
+  if (Math.abs(pPos.y - baseYView) < 0.02) baseYView = pPos.y;
+  pPos.y = baseYView;
   const mesh = runnerMesh();
-  mesh.position.set(pPos.x, G.py, pPos.z);
+  mesh.position.set(pPos.x, pPos.y + G.py, pPos.z);
   mesh.rotation.y = playerAng;
 
   /* pose */
@@ -311,8 +316,8 @@ function updateView(dt) {
 
   /* camera — normal chase framing */
   const fx = -Math.sin(camAng), fz = -Math.cos(camAng);
-  camPos.set(pPos.x - fx * 6.8, 3.3 + G.py * 0.35, pPos.z - fz * 6.8);
-  lookAt.set(pPos.x + fx * 9, 1.4 + G.py * 0.5, pPos.z + fz * 9);
+  camPos.set(pPos.x - fx * 6.8, pPos.y + 3.3 + G.py * 0.35, pPos.z - fz * 6.8);
+  lookAt.set(pPos.x + fx * 9, pPos.y + 1.4 + G.py * 0.5, pPos.z + fz * 9);
 
   /* opening beat: burst out of the bank. Camera sits ahead of Jay looking
      back at him + the bank, then swings to the chase cam as the run begins. */
@@ -320,8 +325,8 @@ function updateView(dt) {
   const introK = smooth(Math.min(1, Math.max(0, (introT - 0.5) / 1.4)));
   if (introK > 0.001) {
     // ahead of Jay and up high, looking back over him at the City Trust facade
-    introPos.set(pPos.x + fx * 10, 5.0, pPos.z + fz * 10);
-    introLook.set(pPos.x - fx * 13, 6.5, pPos.z - fz * 13);
+    introPos.set(pPos.x + fx * 10, pPos.y + 5.0, pPos.z + fz * 10);
+    introLook.set(pPos.x - fx * 13, pPos.y + 6.5, pPos.z - fz * 13);
     camPos.lerp(introPos, introK);
     lookAt.lerp(introLook, introK);
   }

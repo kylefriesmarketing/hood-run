@@ -78,6 +78,12 @@ export const HAZARDS = {
   rollbin:  { clear: null,   depth: 1.0, lanes: 1, tier: 2, hit: 0.85, move: 0.9, districts: ['market','downtown'] },
   bball:    { clear: 'jump', h: 0.6, depth: 0.7, lanes: 1, tier: 1, hit: 0.8, move: 1.3, stumble: true, districts: ['block'] },
   robot:    { clear: null,   depth: 0.9, lanes: 1, tier: 2, hit: 0.85, move: 0.55, stumble: true, districts: ['downtown','market'] },
+  // rooftop route — jump-focused (bible §4.3)
+  acunit:   { clear: 'jump', h: 0.85, depth: 1.2, lanes: 1, tier: 0, hit: 0.85, districts: ['rooftop'] },
+  skylight: { clear: 'jump', h: 0.45, depth: 1.6, lanes: 1, tier: 0, hit: 0.85, districts: ['rooftop'] },
+  roofgap:  { clear: 'jump', h: 0.4,  depth: 2.0, lanes: 3, tier: 1, hit: 0.8,  districts: ['rooftop'] },
+  ducts:    { clear: 'slide', h: 1.25, depth: 1.2, lanes: 3, tier: 2, hit: 0.88, strict: true, districts: ['rooftop'] },
+  chimney:  { clear: null,   depth: 1.6, lanes: 2, tier: 1, hit: 0.9, districts: ['rooftop'] },
 };
 
 /* ---------- districts ---------- */
@@ -116,7 +122,13 @@ export const DISTRICTS = {
     label: 'Alley', icon: '🧺',
     coinMult: 2,
   },
+  rooftop: { // elevated shortcut — jump-focused, dramatic (bible §4.3)
+    label: 'Rooftops', icon: '🏙️',
+    coinMult: 2,
+  },
 };
+export const ROOF_H = 9;                  // how high the rooftop route sits
+export const ROOF_MIN_DIST = 600;         // rooftops are "introduced later"
 export const DISTRICT_ORDER = ['block', 'market', 'downtown'];
 export const DISTRICT_LEN = 850;          // metres per district before rotating
 

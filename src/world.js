@@ -3,7 +3,7 @@
    segment geometry, origin rebase. View-only randomness uses Math.random. */
 
 import * as THREE from '../lib/three.module.js';
-import { LANE_W, ROAD_W, HALF, SIDE_W, WALL_X, DISTRICTS } from './data.js';
+import { LANE_W, ROAD_W, HALF, SIDE_W, WALL_X, DISTRICTS, ROOF_H } from './data.js';
 
 export let scene, camera, renderer;
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -259,15 +259,26 @@ function arrowTexD(dir, color) { // 'L'|'R'|'T'
   });
   return texCache[key];
 }
-function alleyArrowTex() {
-  if (!texCache.alleyArr) texCache.alleyArr = tex(128, 128, (g, w, h) => {
-    g.fillStyle = '#124a44'; g.fillRect(0, 0, w, h);
-    g.strokeStyle = '#3bd6c6'; g.lineWidth = 5; g.strokeRect(5, 5, w - 10, h - 10);
-    g.fillStyle = '#3bd6c6'; g.font = 'bold 26px Arial'; g.textAlign = 'center';
-    g.fillText('ALLEY', w / 2, 44);
-    g.beginPath(); g.moveTo(w / 2, h - 20); g.lineTo(w / 2 - 22, h - 52); g.lineTo(w / 2 - 8, h - 52); g.lineTo(w / 2 - 8, h - 72); g.lineTo(w / 2 + 8, h - 72); g.lineTo(w / 2 + 8, h - 52); g.lineTo(w / 2 + 22, h - 52); g.closePath(); g.fill();
+function alleyArrowTex(kind) {
+  const roof = kind === 'rooftop';
+  const key = roof ? 'roofArr' : 'alleyArr';
+  if (!texCache[key]) texCache[key] = tex(128, 128, (g, w, h) => {
+    g.fillStyle = roof ? '#3a2a5e' : '#124a44'; g.fillRect(0, 0, w, h);
+    const col = roof ? '#c9a4ff' : '#3bd6c6';
+    g.strokeStyle = col; g.lineWidth = 5; g.strokeRect(5, 5, w - 10, h - 10);
+    g.fillStyle = col; g.font = 'bold 24px Arial'; g.textAlign = 'center';
+    g.fillText(roof ? 'ROOFS' : 'ALLEY', w / 2, 42);
+    if (roof) {   // up-arrow: you climb
+      g.beginPath(); g.moveTo(w / 2, h - 78); g.lineTo(w / 2 - 22, h - 46); g.lineTo(w / 2 - 8, h - 46);
+      g.lineTo(w / 2 - 8, h - 22); g.lineTo(w / 2 + 8, h - 22); g.lineTo(w / 2 + 8, h - 46);
+      g.lineTo(w / 2 + 22, h - 46); g.closePath(); g.fill();
+    } else {
+      g.beginPath(); g.moveTo(w / 2, h - 20); g.lineTo(w / 2 - 22, h - 52); g.lineTo(w / 2 - 8, h - 52);
+      g.lineTo(w / 2 - 8, h - 72); g.lineTo(w / 2 + 8, h - 72); g.lineTo(w / 2 + 8, h - 52);
+      g.lineTo(w / 2 + 22, h - 52); g.closePath(); g.fill();
+    }
   });
-  return texCache.alleyArr;
+  return texCache[key];
 }
 const chainTex = () => {
   if (!texCache.chain) texCache.chain = tex(64, 64, (g, w, h) => {
@@ -599,6 +610,39 @@ export function mkHazardMesh(kind) {
       b.position.y = 0.32; g.add(b);
       const line = new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.015, 6, 16), cmat(0x1a1a20)); line.position.y = 0.32; g.add(line);
       return g; }
+    case 'acunit': { const g = new THREE.Group();
+      g.add(box(1.5, 0.8, 1.3, 0xb0b4ba, 0, 0.42, 0));
+      g.add(box(1.55, 0.12, 1.35, 0x8a8f96, 0, 0.86, 0));
+      const fan = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.06, 6, 14), cmat(0x5a5f66));
+      fan.rotation.x = Math.PI / 2; fan.position.y = 0.9; g.add(fan);
+      for (const s of [-1, 1]) g.add(box(0.1, 0.3, 1.2, 0x7a7f86, s * 0.72, 0.2, 0));
+      return g; }
+    case 'skylight': { const g = new THREE.Group();
+      g.add(box(1.7, 0.22, 1.9, 0x6a6560, 0, 0.11, 0));                    // curb
+      const glass = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.3, 1.6),
+        new THREE.MeshLambertMaterial({ color: 0x9fd0e8, transparent: true, opacity: 0.75 }));
+      glass.position.y = 0.34; g.add(glass);
+      g.add(box(0.08, 0.34, 1.6, 0x4a5058, 0, 0.36, 0));
+      return g; }
+    case 'roofgap': { const g = new THREE.Group();
+      // a void between roofs — dark drop with lit windows in the shaft walls
+      const void_ = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_W + 3, 2.0), new THREE.MeshBasicMaterial({ color: 0x14161c }));
+      void_.rotation.x = -Math.PI / 2; void_.position.y = -0.02; void_.userData.ownGeo = true; g.add(void_);
+      for (const s of [-1, 1]) g.add(box(ROAD_W + 3, 0.24, 0.22, 0xa39a8e, 0, 0.12, s * 1.0));  // lip edges
+      for (let i = 0; i < 5; i++) g.add(box(0.4, 0.5, 0.04, 0xffe9b0, -3 + i * 1.5, -1.6, 0.9,
+        new THREE.MeshBasicMaterial({ color: 0xffe9b0 })));
+      return g; }
+    case 'ducts': { const g = new THREE.Group();
+      const duct = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, ROAD_W + 2, 12), cmat(0xb0b4ba));
+      duct.rotation.z = Math.PI / 2; duct.position.y = 1.55; g.add(duct);
+      for (const s of [-1, 1]) g.add(box(0.24, 1.55, 0.24, 0x8a8f96, s * (HALF - 0.4), 0.78, 0));
+      for (let i = -2; i <= 2; i++) g.add(box(0.1, 0.95, 0.95, 0x9aa0a8, i * 1.6, 1.55, 0));
+      return g; }
+    case 'chimney': { const g = new THREE.Group();
+      g.add(box(1.5, 1.9, 1.5, 0x8a4a34, 0, 0.95, 0));
+      g.add(box(1.75, 0.22, 1.75, 0x6a3a28, 0, 1.98, 0));
+      g.add(box(0.5, 0.3, 0.5, 0x2a2a30, 0, 2.2, 0));
+      return g; }
     case 'robot': { const g = new THREE.Group();
       g.add(box(0.7, 0.6, 0.9, 0xe8e8ec, 0, 0.55, 0));
       g.add(box(0.72, 0.14, 0.92, 0x3bd6c6, 0, 0.9, 0));
@@ -660,45 +704,58 @@ export function buildSegment(seg, opts) {
   // opts: { district, first, alley, split, contrast, decorDensity }
   const dname = seg.alley ? seg.baseDistrict : seg.district;
   const d = DISTRICTS[dname] || DISTRICTS.block;
+  const isRoof = opts.roof;
   const g = new THREE.Group();
-  g.position.set(seg.ox, 0, seg.oz);
+  g.position.set(seg.ox, isRoof ? ROOF_H : 0, seg.oz);
   g.rotation.y = seg.ang;
   const L = seg.len;
   const dd = opts.decorDensity ?? 1;
 
-  // road
-  const roadGeo = new THREE.PlaneGeometry(ROAD_W, L - 8);
-  const rt = roadTex(d.road).clone(); rt.needsUpdate = true; rt.repeat.set(1, (L - 8) / 8);
-  const road = new THREE.Mesh(roadGeo, new THREE.MeshLambertMaterial({ map: rt }));
-  road.rotation.x = -Math.PI / 2; road.position.set(0, 0.01, -L / 2); road.userData.ownGeo = true;
-  g.add(road);
+  if (!isRoof) {
+    // road
+    const roadGeo = new THREE.PlaneGeometry(ROAD_W, L - 8);
+    const rt = roadTex(d.road).clone(); rt.needsUpdate = true; rt.repeat.set(1, (L - 8) / 8);
+    const road = new THREE.Mesh(roadGeo, new THREE.MeshLambertMaterial({ map: rt }));
+    road.rotation.x = -Math.PI / 2; road.position.set(0, 0.01, -L / 2); road.userData.ownGeo = true;
+    g.add(road);
 
-  // bus lane paint (downtown)
-  if (d.decor?.buslane && !seg.alley) {
-    const bl = new THREE.Mesh(new THREE.PlaneGeometry(LANE_W - 0.3, L - 12), new THREE.MeshBasicMaterial({ color: 0x8a3030, transparent: true, opacity: 0.35 }));
-    bl.rotation.x = -Math.PI / 2; bl.position.set(LANE_W, 0.015, -L / 2); bl.userData.ownGeo = true; g.add(bl);
+    // bus lane paint (downtown)
+    if (d.decor?.buslane && !seg.alley) {
+      const bl = new THREE.Mesh(new THREE.PlaneGeometry(LANE_W - 0.3, L - 12), new THREE.MeshBasicMaterial({ color: 0x8a3030, transparent: true, opacity: 0.35 }));
+      bl.rotation.x = -Math.PI / 2; bl.position.set(LANE_W, 0.015, -L / 2); bl.userData.ownGeo = true; g.add(bl);
+    }
+
+    // intersection patch at exit
+    const patch = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_W, ROAD_W), new THREE.MeshLambertMaterial({ map: interTex(d.road) }));
+    patch.rotation.x = -Math.PI / 2; patch.position.set(0, 0.012, -L); patch.userData.ownGeo = true;
+    g.add(patch);
+    if (opts.first) {
+      const p0 = patch.clone(); p0.position.set(0, 0.012, 0); g.add(p0);
+      const bank = mkBankFacade(); bank.position.set(0, 0, 13); g.add(bank);
+    }
   }
 
-  // intersection patch at exit
-  const patch = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_W, ROAD_W), new THREE.MeshLambertMaterial({ map: interTex(d.road) }));
-  patch.rotation.x = -Math.PI / 2; patch.position.set(0, 0.012, -L); patch.userData.ownGeo = true;
-  g.add(patch);
-  if (opts.first) {
-    const p0 = patch.clone(); p0.position.set(0, 0.012, 0); g.add(p0);
-    const bank = mkBankFacade(); bank.position.set(0, 0, 13); g.add(bank);
-  }
-
-  if (seg.alley) buildAlleyDressing(g, seg, d, opts);
+  if (isRoof) buildRooftopDressing(g, seg, d, opts);
+  else if (seg.alley) buildAlleyDressing(g, seg, d, opts);
   else buildStreetDressing(g, seg, d, opts, dd);
 
   // junction dressing at exit
   const accent = d.accent || '#ffd23c';
   if (seg.exit !== 'S') {
-    g.add(box(30, 15, 10, 0x8a7050, 0, 7.5, -L - 4 - 5));
+    if (isRoof) {   // a parapet you turn along, not a brick wall
+      g.add(box(30, 1.3, 1.0, 0x8a8076, 0, 0.65, -L - 3));
+      g.add(box(30, 0.18, 1.3, 0xa39a8e, 0, 1.35, -L - 3));
+    } else {
+      g.add(box(30, 15, 10, 0x8a7050, 0, 7.5, -L - 4 - 5));
+    }
     const arrow = new THREE.Mesh(new THREE.PlaneGeometry(5, 2.5), new THREE.MeshBasicMaterial({ map: arrowTexD(seg.exit, accent) }));
     arrow.position.set(0, 2.6, -L - 3.9); g.add(arrow);
-    const blockSide = seg.exit === 'L' ? 1 : -1;
-    g.add(box(12, 12, 12, 0x7a6448, blockSide * (HALF + SIDE_W + 6), 6, -L));
+    if (!isRoof) {
+      const blockSide = seg.exit === 'L' ? 1 : -1;
+      g.add(box(12, 12, 12, 0x7a6448, blockSide * (HALF + SIDE_W + 6), 6, -L));
+    }
+  } else if (isRoof) {
+    // straight roof exit: nothing to draw, the deck just runs on
   } else {
     for (const s of [-1, 1]) {
       const stub = new THREE.Mesh(new THREE.PlaneGeometry(12, ROAD_W), new THREE.MeshLambertMaterial({ color: d.road }));
@@ -709,15 +766,20 @@ export function buildSegment(seg, opts) {
   // alley gate telegraph on the segment BEFORE a split
   if (seg.splitNext) {
     const side = seg.splitNext; // -1 or 1
-    const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.6), new THREE.MeshBasicMaterial({ map: alleyArrowTex() }));
+    const roof = seg.splitKindNext === 'rooftop';
+    const post = roof ? 0x6a4a9a : 0x1f8a7a, beam = roof ? 0xc9a4ff : 0x3bd6c6;
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.6), new THREE.MeshBasicMaterial({ map: alleyArrowTex(seg.splitKindNext) }));
     sign.position.set(side * (HALF - 1.0), 2.2, -L + 5.2); g.add(sign);
     const arch = new THREE.Group();
-    arch.add(box(0.3, 3.4, 0.3, 0x1f8a7a, side * (HALF - 2.2), 1.7, 0));
-    arch.add(box(0.3, 3.4, 0.3, 0x1f8a7a, side * (HALF + 0.6), 1.7, 0));
-    arch.add(box(3.2, 0.3, 0.3, 0x3bd6c6, side * (HALF - 0.8), 3.4, 0));
+    arch.add(box(0.3, 3.4, 0.3, post, side * (HALF - 2.2), 1.7, 0));
+    arch.add(box(0.3, 3.4, 0.3, post, side * (HALF + 0.6), 1.7, 0));
+    arch.add(box(3.2, 0.3, 0.3, beam, side * (HALF - 0.8), 3.4, 0));
     arch.position.z = -L + 2; g.add(arch);
-    // teal paint leading into the gate lane
-    const paint = new THREE.Mesh(new THREE.PlaneGeometry(LANE_W - 0.6, 10), new THREE.MeshBasicMaterial({ color: 0x3bd6c6, transparent: true, opacity: 0.3 }));
+    if (roof) {   // a fire escape you vault up
+      const fe = mkFireEscape(); fe.position.set(side * (HALF + 1.6), 0.2, -L + 3); fe.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2; g.add(fe);
+      for (let i = 0; i < 5; i++) g.add(box(1.6, 0.12, 0.4, 0x4a5058, side * (HALF - 0.6), 0.6 + i * 0.8, -L + 5 - i * 0.9));
+    }
+    const paint = new THREE.Mesh(new THREE.PlaneGeometry(LANE_W - 0.6, 10), new THREE.MeshBasicMaterial({ color: beam, transparent: true, opacity: 0.3 }));
     paint.rotation.x = -Math.PI / 2; paint.position.set(side * LANE_W, 0.02, -L + 9); paint.userData.ownGeo = true; g.add(paint);
   }
   scene.add(g);
@@ -810,6 +872,76 @@ function buildStreetDressing(g, seg, d, opts, dd) {
       g.add(b); bulbs.push(b);
     }
     g.userData.bulbs = bulbs;
+  }
+}
+
+/* rooftop route: tar-and-gravel deck, parapets, water tower, skyline below */
+function buildRooftopDressing(g, seg, d, opts) {
+  const L = seg.len;
+  // deck surface (replaces the road look)
+  const deck = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_W + 3, L - 6), new THREE.MeshLambertMaterial({
+    map: tex(128, 128, (g2, w, h) => {
+      g2.fillStyle = '#3a3a40'; g2.fillRect(0, 0, w, h);
+      noise(g2, w, h, 900, 0.2, false); noise(g2, w, h, 500, 0.12, true);
+      g2.strokeStyle = 'rgba(20,20,26,.6)'; g2.lineWidth = 3;          // tar seams
+      for (let y = 16; y < h; y += 32) { g2.beginPath(); g2.moveTo(0, y); g2.lineTo(w, y); g2.stroke(); }
+    }, { repeat: true }) }));
+  const dt = deck.material.map; dt.repeat.set(1, (L - 6) / 10);
+  deck.rotation.x = -Math.PI / 2; deck.position.set(0, 0.02, -L / 2); deck.userData.ownGeo = true;
+  g.add(deck);
+
+  // parapet walls both sides — the safety edge you run between
+  for (const s of [-1, 1]) {
+    g.add(box(0.5, 1.1, L - 6, 0x8a8076, s * (HALF + 1.4), 0.55, -L / 2));
+    g.add(box(0.7, 0.16, L - 6, 0xa39a8e, s * (HALF + 1.4), 1.16, -L / 2));   // coping stone
+  }
+
+  // the city BELOW — lower rooftops flanking, so the height reads instantly
+  for (const s of [-1, 1]) {
+    for (let dpos = 4; dpos < L - 4; dpos += rand(11, 18)) {
+      const h = rand(2.5, 7.5), w = rand(8, 14);
+      g.add(box(11, h, w, 0x6a6560, s * (HALF + 9), -ROOF_H + h / 2, -dpos));   // roof slab below
+      if (Math.random() < 0.5) g.add(box(1.4, 0.9, 1.4, 0x55504b, s * (HALF + 7.5), -ROOF_H + h + 0.45, -dpos));
+    }
+  }
+  // distant skyline silhouettes
+  for (const s of [-1, 1]) {
+    for (let i = 0; i < 5; i++) {
+      const h = rand(6, 20);
+      g.add(box(rand(6, 12), h, rand(6, 12), 0x7d8593, s * rand(26, 46), -ROOF_H + h / 2, -rand(6, L - 6)));
+    }
+  }
+
+  // rooftop furniture
+  for (let dpos = rand(8, 16); dpos < L - 10; dpos += rand(14, 24)) {
+    const s = Math.random() < 0.5 ? -1 : 1;
+    const roll = Math.random();
+    if (roll < 0.3) {                                     // water tower
+      const t = new THREE.Group();
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, 2.4, 12), cmat(0x8a6a44));
+      barrel.position.y = 3.4; t.add(barrel);
+      const cone = new THREE.Mesh(new THREE.ConeGeometry(1.5, 0.9, 12), cmat(0x6a4a2c));
+      cone.position.y = 5.0; t.add(cone);
+      for (const [lx, lz] of [[-0.9, -0.9], [0.9, -0.9], [-0.9, 0.9], [0.9, 0.9]])
+        t.add(box(0.16, 2.2, 0.16, 0x5a4a3a, lx, 1.1, lz));
+      t.position.set(s * (HALF + 3.4), 0, -dpos); g.add(t);
+    } else if (roll < 0.6) {                              // roof hatch + pigeons
+      g.add(box(1.4, 0.5, 1.4, 0x6a5a4a, s * (HALF + 2.6), 0.25, -dpos));
+      for (let p = 0; p < 3; p++) {
+        const pg = box(0.22, 0.2, 0.32, 0x9aa0aa, s * (HALF + 2.2) + rand(-0.6, 0.6), 0.62, -dpos + rand(-0.8, 0.8));
+        g.add(pg);
+      }
+    } else {                                              // antenna cluster
+      g.add(box(0.1, rand(2, 3.6), 0.1, 0x4a5058, s * (HALF + 2.8), 1.6, -dpos));
+      g.add(box(1.2, 0.08, 0.08, 0x4a5058, s * (HALF + 2.8), 2.8, -dpos));
+      g.add(box(0.08, 0.08, 1.0, 0x4a5058, s * (HALF + 2.8), 2.5, -dpos));
+    }
+  }
+  // strung laundry lines overhead for silhouette
+  for (let dpos = rand(12, 22); dpos < L - 10; dpos += rand(18, 30)) {
+    g.add(box(ROAD_W + 2, 0.04, 0.04, 0xd8d8de, 0, 4.4, -dpos));
+    const cols = [0xe8604c, 0x3bd6c6, 0xffd23c, 0xf0f0f0];
+    for (let i = 0; i < 4; i++) { const sh = box(0.5, 0.62, 0.04, pick(cols), -2.6 + i * 1.7, 4.05, -dpos); sh.userData.sway = 0.12; g.add(sh); }
   }
 }
 

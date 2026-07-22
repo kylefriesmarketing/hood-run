@@ -3,7 +3,7 @@
    style chain, Crosstown meter, difficulty, run lifecycle.
    No DOM, no THREE — pure logic + callbacks. */
 
-import { TUNE, LANE_W, HAZARDS, CALLOUTS, CRASH_LINES, DISTRICTS, makeRng, hash2, dateKey, dailySeed } from './data.js';
+import { TUNE, LANE_W, HAZARDS, CALLOUTS, CRASH_LINES, DISTRICTS, ROOF_H, makeRng, hash2, dateKey, dailySeed } from './data.js';
 import { nextSegDescriptor, populateSegment, districtAt, phaseAt } from './segment-generator.js';
 import { checkCollisions, updateMovers } from './collisions.js';
 import { loadSave, commitSave } from './save.js';
@@ -154,7 +154,7 @@ export function findSeg(d) {
 export function worldPos(d, laneX, y, out) {
   const s = findSeg(d), t = d - s.start;
   out.x = s.ox + laneX * s.cos - t * s.sin;
-  out.y = y;
+  out.y = y + (s.baseY || 0);          // rooftop route rides above the street
   out.z = s.oz - laneX * s.sin - t * s.cos;
   return out;
 }
@@ -428,18 +428,20 @@ export function stepFixed(dt) {
 
 function resolveSplit(seg) {
   const side = seg.splitSide;
-  const choseAlley = side !== 0 && G.lane === side;
-  seg.alley = choseAlley;
-  const activeVariant = choseAlley ? 1 : 0;
+  const took = side !== 0 && G.lane === side;
+  seg.alley = took;                                   // "on the shortcut variant"
+  seg.baseY = (took && seg.splitKind === 'rooftop') ? ROOF_H : 0;
+  const activeVariant = took ? 1 : 0;
   for (const arr of [G.obs, G.coins]) {
     for (const it of arr) if (it.segIndex === seg.index) it.active = (it.variant === activeVariant);
   }
-  cb.meshSwap && cb.meshSwap('split', { seg, alley: choseAlley });
-  if (choseAlley) {
+  cb.meshSwap && cb.meshSwap('split', { seg, alley: took, kind: seg.splitKind });
+  if (took) {
     G.run.shortcut++; missionEvent('shortcut', 1);
     G.score.route += TUNE.shortcutBonus;
     addStyle('shortcut');
     fx('shortcut');
+    cb.callout && cb.callout(seg.splitKind === 'rooftop' ? '🏙️ ROOFTOPS!' : '🧺 ALLEY!', 'shortcut');
   }
 }
 
@@ -513,6 +515,6 @@ function collectPickups(dt) {
 /* district of the player's current position (drives lighting + banner) */
 export function currentDistrict() {
   const s = G && G.segs[G.segIdx];
-  return s ? (s.alley ? 'alley' : s.district) : 'block';
+  return s ? (s.alley ? (s.splitKind || 'alley') : s.district) : 'block';
 }
 export function districtLabel(name) { return DISTRICTS[name]?.label || name; }

@@ -3,7 +3,7 @@
    Each segment's content comes from an rng forked from (runSeed, segIndex),
    so generation is deterministic regardless of build timing or route choice. */
 
-import { LANE_W, HAZARDS, TUNE, DISTRICT_ORDER, DISTRICT_LEN, makeRng, hash2 } from './data.js';
+import { LANE_W, HAZARDS, TUNE, DISTRICT_ORDER, DISTRICT_LEN, ROOF_MIN_DIST, makeRng, hash2 } from './data.js';
 import { validatePlacement } from './collisions.js';
 
 export function districtAt(dist) {
@@ -42,12 +42,14 @@ export function nextSegDescriptor(G) {
     else exit = rng() < 0.5 ? 'L' : 'R';
   }
 
-  // alley split offer: this segment tells the NEXT one to be a split candidate
-  let splitNext = 0;
+  // shortcut split offer: this segment tells the NEXT one to be a split candidate
+  let splitNext = 0, splitKindNext = 'alley';
   const sinceSplit = index - (G.lastSplitIndex ?? -10);
   if (!first && !prev?.splitNext && !prev?.alleyPending && sinceSplit >= TUNE.shortcutEvery[0] &&
       (sinceSplit >= TUNE.shortcutEvery[1] || rng() < 0.35) && exit !== 'S' && index > 2) {
     splitNext = rng() < 0.5 ? -1 : 1;
+    // rooftops unlock deeper into the run, then alternate with alleys
+    splitKindNext = (start > ROOF_MIN_DIST && rng() < 0.5) ? 'rooftop' : 'alley';
     G.lastSplitIndex = index;
   }
 
@@ -55,10 +57,13 @@ export function nextSegDescriptor(G) {
   return {
     index, ang, ox, oz, dx, dz, cos: Math.cos(ang), sin: Math.sin(ang),
     len, start, exit, district, baseDistrict: district,
-    splitNext,                      // this segment shows an alley gate near its exit
+    splitNext,                      // this segment shows a shortcut gate near its exit
+    splitKindNext,                  // 'alley' | 'rooftop' — what that gate leads to
     alley: false,                   // set by game when the player takes the gate
     alleyPending: !!(prev && prev.splitNext), // next seg is the split segment
     splitSide: prev ? prev.splitNext : 0,
+    splitKind: prev ? prev.splitKindNext : 'alley',
+    baseY: 0,                       // elevated for the rooftop variant
     group: null, rngSeed: hash2(G.seed, index),
   };
 }
@@ -69,12 +74,14 @@ export function nextSegDescriptor(G) {
 export function populateSegment(G, seg, buildMeshCb, vinfo) {
   vinfo = vinfo || { variant: 0, active: true };
   const variant = vinfo.variant;
-  const isAlley = variant === 1;
+  const isShortcut = variant === 1;
+  const kind = seg.splitKind || 'alley';
   const rng = makeRng(hash2(seg.rngSeed, 7777 + variant));
   const phase = phaseAt(G.time);
-  const tier = isAlley ? Math.min(4, phase.tier + 1) : phase.tier;
-  const density = phase.density * (isAlley ? 1.15 : 1);
-  const dname = isAlley ? 'alley' : seg.district;
+  const tier = isShortcut ? Math.min(4, phase.tier + 1) : phase.tier;
+  const density = phase.density * (isShortcut ? 1.15 : 1);
+  const dname = isShortcut ? kind : seg.district;
+  const isAlley = isShortcut;   // both shortcut variants get the richer coin payout
 
   const pool = Object.keys(HAZARDS).filter(k => {
     const h = HAZARDS[k];
