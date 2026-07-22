@@ -11,15 +11,20 @@ function toast(msg) { toastCb && toastCb(msg); }
 export function initMissions() {
   const s = loadSave();
   const m = s.missions;
+  // Bounded scan: once every mission is active-or-done there is nothing left to
+  // slot in, and an unbounded loop here would spin forever (active never fills).
   while (m.active.length < 3) {
-    const next = MISSIONS[m.cursor % MISSIONS.length];
-    m.cursor++;
-    if (m.active.includes(next.id) || m.done.includes(next.id)) {
-      if (m.done.length >= MISSIONS.length) break;
-      continue;
+    let picked = false;
+    for (let tries = 0; tries < MISSIONS.length; tries++) {
+      const next = MISSIONS[m.cursor % MISSIONS.length];
+      m.cursor = (m.cursor + 1) % MISSIONS.length;
+      if (m.active.includes(next.id) || m.done.includes(next.id)) continue;
+      m.active.push(next.id);
+      if (!(next.id in m.progress)) m.progress[next.id] = 0;
+      picked = true;
+      break;
     }
-    m.active.push(next.id);
-    if (!(next.id in m.progress)) m.progress[next.id] = 0;
+    if (!picked) break;                     // pool exhausted — run with what we have
   }
   commitSave();
 }
@@ -51,8 +56,9 @@ export function activeMissions() {
   const s = loadSave();
   return s.missions.active.map(id => {
     const def = MISSIONS.find(x => x.id === id);
+    if (!def) return null;                  // id from an older build — skip, don't crash
     return { ...def, progress: Math.min(s.missions.progress[id] || 0, def.target) };
-  });
+  }).filter(Boolean);
 }
 
 export function addCoins(n) { const s = loadSave(); s.coins += n; s.lifetime.coins += n; }

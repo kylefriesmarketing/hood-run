@@ -109,6 +109,7 @@ function crashLine(cause) {
 /* ---------------- segments ---------------- */
 function pathEnd() { const s = G.segs[G.segs.length - 1]; return s ? s.start + s.len : 0; }
 function genAhead() {
+  let added = false;
   while (pathEnd() < G.dist + 300) {
     const seg = nextSegDescriptor(G);
     G.segs.push(seg);
@@ -117,11 +118,20 @@ function genAhead() {
     if (!(G.tutorial && seg.index <= 1)) {
       populateSegment(G, seg, cb.mesh, { variant: 0, active: !seg.alleyPending || true });
       if (seg.alleyPending) {
-        // dormant alley variant, activated if the player takes the gate
+        // dormant shortcut variant, activated if the player takes the gate
         populateSegment(G, seg, cb.mesh, { variant: 1, active: false });
-        cb.mesh && cb.mesh('alleyGroup', seg);   // build hidden alley dressing
+        cb.mesh && cb.mesh('alleyGroup', seg);   // build hidden shortcut dressing
       }
+      added = true;
     }
+  }
+  // The shortcut variant is appended after the street variant but restarts at
+  // the segment's near end, so the lists must be re-sorted: collision,
+  // pickup and prune loops all early-exit on the first item past the player.
+  if (added) {
+    const byD = (a, b) => a.d - b.d;
+    G.obs.sort(byD); G.coins.sort(byD);
+    G.tokens.sort(byD); G.letters.sort(byD); G.powsList.sort(byD);
   }
 }
 function pruneBehind() {
@@ -432,7 +442,10 @@ function resolveSplit(seg) {
   seg.alley = took;                                   // "on the shortcut variant"
   seg.baseY = (took && seg.splitKind === 'rooftop') ? ROOF_H : 0;
   const activeVariant = took ? 1 : 0;
-  for (const arr of [G.obs, G.coins]) {
+  // tokens/letters/power-ups only ever exist on the street variant, so taking a
+  // shortcut must retire them — their meshes ride the hidden street group and
+  // they'd otherwise be collectible while invisible.
+  for (const arr of [G.obs, G.coins, G.tokens, G.letters, G.powsList]) {
     for (const it of arr) if (it.segIndex === seg.index) it.active = (it.variant === activeVariant);
   }
   cb.meshSwap && cb.meshSwap('split', { seg, alley: took, kind: seg.splitKind });
@@ -473,7 +486,7 @@ function collectPickups(dt) {
   G.comboT = Math.max(0, (G.comboT || 0) - dt);
 
   for (const t of G.tokens) {
-    if (t.taken) continue;
+    if (t.taken || !t.active) continue;
     if (t.d - G.dist > 3) break;
     if (Math.abs(t.d - G.dist) < 1.6 && Math.abs(G.laneX - laneC(t.lane)) < 1.15) {
       t.taken = true; if (t.mesh) t.mesh.visible = false;
@@ -483,7 +496,7 @@ function collectPickups(dt) {
     }
   }
   for (const l of G.letters) {
-    if (l.taken) continue;
+    if (l.taken || !l.active) continue;
     if (l.d - G.dist > 3) break;
     if (Math.abs(l.d - G.dist) < 1.6 && Math.abs(G.laneX - laneC(l.lane)) < 1.15) {
       l.taken = true; if (l.mesh) l.mesh.visible = false;
@@ -501,7 +514,7 @@ function collectPickups(dt) {
     }
   }
   for (const p of G.powsList) {
-    if (p.taken) continue;
+    if (p.taken || !p.active) continue;
     if (p.d - G.dist > 3) break;
     if (Math.abs(p.d - G.dist) < 1.6 && Math.abs(G.laneX - laneC(p.lane)) < 1.15) {
       p.taken = true; if (p.mesh) p.mesh.visible = false;
