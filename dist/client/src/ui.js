@@ -3,7 +3,7 @@
 
 import { COSMETICS, POWERUPS, TUNE, DISTRICTS, DISTRICT_ORDER, DISTRICT_LEN, dateKey } from './data.js';
 import { loadSave, commitSave, resetSave } from './save.js';
-import { activeMissions, buyCosmetic, equipCosmetic, onToast } from './progression.js';
+import { activeMissions, buyCosmetic, equipCosmetic, onToast, initMissions } from './progression.js';
 import { setVolumes, sfx } from './audio.js';
 
 const $ = id => document.getElementById(id);
@@ -28,10 +28,15 @@ export function initUI(h) {
   refreshHome();
   applySettings();
 }
+/* short haptic tick where supported — silently ignored elsewhere */
+export function haptic(ms) {
+  if (loadSave().settings.reducedMotion) return;
+  try { navigator.vibrate && navigator.vibrate(ms); } catch { /* unsupported */ }
+}
 function bindTap(id, fn) {
   const el = $(id); if (!el) return;
-  el.onclick = () => { sfx.ui(); fn(); };
-  el.addEventListener('touchend', e => { e.preventDefault(); e.stopPropagation(); sfx.ui(); fn(); }, { passive: false });
+  el.onclick = () => { sfx.ui(); haptic(10); fn(); };
+  el.addEventListener('touchend', e => { e.preventDefault(); e.stopPropagation(); sfx.ui(); haptic(10); fn(); }, { passive: false });
 }
 
 const SCREENS = ['home', 'runner', 'missions', 'settings', 'over', 'paused'];
@@ -43,9 +48,9 @@ export function hideScreens() { for (const s of SCREENS) $(s)?.classList.remove(
 
 export function refreshHome() {
   const s = loadSave();
-  $('beststrip').innerHTML = s.high
-    ? `Best: <b>${s.high.toLocaleString()}</b> · Farthest: <b>${s.bestDist}m</b> · <span class="coin">●</span> ${s.coins} · 🔷 ${s.tokens}`
-    : 'First run — the block is waiting.';
+  $('hs-best').textContent = s.high.toLocaleString();
+  $('hs-far').textContent = s.bestDist + 'm';
+  $('hs-coins').textContent = s.coins.toLocaleString();
   const discovered = Math.min(DISTRICT_ORDER.length, 1 + Math.floor(s.lifetime.dist / DISTRICT_LEN));
   $('district-strip').textContent = DISTRICT_ORDER.slice(0, discovered)
     .map(d => DISTRICTS[d].icon + ' ' + DISTRICTS[d].label).join('  ·  ')
@@ -58,15 +63,21 @@ export function refreshHome() {
 }
 
 /* ---------------- HUD ---------------- */
-let lastHud = 0;
+let lastHud = 0, multPopT = null, lastLetters = null;
 export function updateHud(G, force, mult, total) {
   const now = performance.now();
   if (!force && now - lastHud < 100) return;
   lastHud = now;
   $('hud-score').textContent = total.toLocaleString();
-  $('hud-mult').textContent = '×' + mult;
+  const multEl = $('hud-mult');
+  const multTxt = '×' + mult;
+  if (multEl.textContent !== multTxt) {            // pop the badge when it changes
+    multEl.textContent = multTxt;
+    multEl.classList.add('pop');
+    clearTimeout(multPopT); multPopT = setTimeout(() => multEl.classList.remove('pop'), 180);
+  }
   $('hud-dist').textContent = Math.floor(G.dist) + 'm';
-  $('hud-coins').textContent = G.run.coins;
+  $('hud-coins').lastElementChild.textContent = G.run.coins;
   // meter
   $('meter-fill').style.width = Math.round(G.meter * 100) + '%';
   $('meter').classList.toggle('party', G.partyT > 0);
@@ -80,8 +91,11 @@ export function updateHud(G, force, mult, total) {
   }
   if (G.pows.shield > 0) html += `<div class="pow" style="border-color:${POWERUPS.shield.color}"><span>${POWERUPS.shield.icon}</span><i style="width:100%;background:${POWERUPS.shield.color}"></i></div>`;
   $('pows').innerHTML = html;
-  // letters
-  $('letters').textContent = G.lettersGot.length ? 'HOOD'.split('').map((ch, i) => G.lettersGot.includes(i) ? ch : '·').join('') : '';
+  // letters — four slots that light up as you spell H-O-O-D
+  const lettersHtml = G.lettersGot.length
+    ? 'HOOD'.split('').map((ch, i) => `<span class="${G.lettersGot.includes(i) ? 'on' : ''}">${ch}</span>`).join('')
+    : '';
+  if (lastLetters !== lettersHtml) { $('letters').innerHTML = lettersHtml; lastLetters = lettersHtml; }
 }
 
 let calloutT = null;
@@ -145,11 +159,13 @@ export function showResults(r) {
     `<div class="res"><div class="v">×${r.styleMax}</div><div class="l">Best Chain</div></div>`;
   $('newbest').style.display = r.newHigh ? 'block' : 'none';
   if (r.newHigh) sfx.highscore();
+  haptic(r.newHigh ? [18, 60, 18, 60, 30] : 26);
   showScreen('over');
 }
 
 /* ---------------- missions screen ---------------- */
 function renderMissions() {
+  initMissions();                 // refill after a progress reset so the page is never blank
   const s = loadSave();
   const list = activeMissions();
   $('missions-list').innerHTML = list.map(m => {
@@ -175,7 +191,7 @@ function renderMissions() {
 function renderRunner() {
   const s = loadSave();
   const slots = [['skin', 'Appearance'], ['outfit', 'Outfit'], ['shoes', 'Shoes'], ['hat', 'Hat'], ['trail', 'Trail'], ['pose', 'Victory Pose']];
-  $('runner-coins').innerHTML = `<span class="coin">●</span> ${s.coins}`;
+  $('runner-coins').textContent = s.coins.toLocaleString();
   $('runner-slots').innerHTML = slots.map(([slot, label]) => {
     const items = COSMETICS[slot].map(c => {
       const owned = s.unlocks.owned.includes(c.id);
