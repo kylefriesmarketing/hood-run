@@ -17,6 +17,10 @@ export const TUNE = {
   gapStart: 5.5, gapMax: 10, gapRegen: 0.45, gapStumble: 3.5, gapCaught: 2.0,
   puddleSlow: 0.75, puddleT: 0.5,
   simHz: 60,
+  // opening cinematic: Jay bursts out of the bank and you take over at the kerb
+  // -12 puts him level with the bank doors (the facade mass spans z 12..20, so
+  // starting further back buries him — and the camera — inside solid geometry)
+  introDur: 2.6, introStart: -12,
   rebaseEvery: 420,                                 // origin rebase (float safety)
   // style chain
   styleQuiet: 6, styleDecay: 1,                     // levels/s after quiet

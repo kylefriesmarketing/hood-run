@@ -20,7 +20,7 @@ export function initUI(h) {
   bindTap('home-btn', () => { showScreen('home'); hooks.toHome(); });
   bindTap('resume-btn', () => hooks.resume());
   bindTap('pause-home-btn', () => { showScreen('home'); hooks.toHome(); });
-  bindTap('runner-btn', () => { renderRunner(); showScreen('runner'); });
+  bindTap('runner-btn', () => { renderRunner(); showScreen('runner'); hooks.refreshPreview && hooks.refreshPreview(); });
   bindTap('store-btn', () => { renderStore(); showScreen('store'); });
   bindTap('missions-btn', () => { renderMissions(); showScreen('missions'); });
   bindTap('settings-btn', () => { renderSettings(); showScreen('settings'); });

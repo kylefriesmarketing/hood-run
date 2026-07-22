@@ -12,18 +12,17 @@ function cosmeticById(slot, id) {
   return COSMETICS[slot].find(c => c.id === id) || COSMETICS[slot][0];
 }
 
-export function buildRunner(equipped) {
-  if (mesh) { scene.remove(mesh); }
+/* Build a standalone Jay from an equipped set. Returns { group, parts } and
+   touches no scene, so the closet can render its own preview copy. */
+export function makeRunner(equipped) {
   const outfit = cosmeticById('outfit', equipped.outfit).color;
   const shoes = cosmeticById('shoes', equipped.shoes).color;
   const hat = cosmeticById('hat', equipped.hat);
   const skin = cosmeticById('skin', equipped.skin).color;
-  trailKind = cosmeticById('trail', equipped.trail).kind;
-  poseKind = cosmeticById('pose', equipped.pose).kind;
 
-  mesh = new THREE.Group();
+  const mesh = new THREE.Group();
   const body = new THREE.Group(); mesh.add(body);
-  parts = { body };
+  const parts = { body };
   body.add(box(0.7, 0.75, 0.42, outfit, 0, 1.08, 0));
   body.add(box(0.74, 0.18, 0.46, outfit, 0, 1.42, -0.02));
   body.add(box(0.42, 0.42, 0.42, skin, 0, 1.72, 0));
@@ -63,6 +62,16 @@ export function buildRunner(equipped) {
   parts.armL = mkArm(-1); parts.armR = mkArm(1);
   parts.legL = mkLeg(-1); parts.legR = mkLeg(1);
   mesh.add(blobShadow(1.05));
+  return { group: mesh, parts };
+}
+
+/* The in-world Jay: build one and own it as the module singleton. */
+export function buildRunner(equipped) {
+  if (mesh) scene.remove(mesh);
+  const built = makeRunner(equipped);
+  mesh = built.group; parts = built.parts;
+  trailKind = cosmeticById('trail', equipped.trail).kind;
+  poseKind = cosmeticById('pose', equipped.pose).kind;
   scene.add(mesh);
 
   // trail pool

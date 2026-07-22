@@ -300,6 +300,12 @@
     margin-bottom:var(--sp2); text-transform:uppercase; font-weight:800; }
 
   /* runner / cosmetics */
+  .preview-stage{ height:190px; flex:none; position:relative; border-bottom:1px solid var(--line);
+    background:radial-gradient(ellipse at 50% 78%, rgba(96,116,180,.4), rgba(14,18,32,0) 68%); }
+  .preview-stage::after{ content:''; position:absolute; left:50%; bottom:22px; transform:translateX(-50%);
+    width:120px; height:14px; border-radius:50%; background:rgba(0,0,0,.4); filter:blur(7px); }
+  #runner-preview{ position:absolute; inset:0; width:100%; height:100%; display:block; z-index:1; }
+  @media (max-height:680px){ .preview-stage{ height:140px; } }
   .slot{ text-align:left; margin-bottom:var(--sp4); }
   .slot h3{ font-size:10px; letter-spacing:2.4px; text-transform:uppercase; color:var(--muted);
     margin-bottom:var(--sp2); font-weight:800; }
@@ -473,6 +479,7 @@
       <h2>Jay's Closet</h2>
       <div class="head-tag"><i class="dot-coin"></i><span id="runner-coins" class="num">0</span></div>
     </div>
+    <div class="preview-stage"><canvas id="runner-preview"></canvas></div>
     <div class="sheet-body" id="runner-slots"></div>
   </div>
 </div>

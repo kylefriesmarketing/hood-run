@@ -47,7 +47,7 @@ export function startRun(seed, daily) {
     crashCause: '', dieT: 0, resultsApplied: false,
     district: 'block',
     tutorial: !save.tutorialDone, tutStep: 0, tutDone: false,
-    countdownT: 1.3,
+    countdownT: TUNE.introDur,
     groupsSinceRecovery: 0, speedForValidation: 22,
     lastRebase: 0, god: false, daily: !!daily,
     powDur: powDurations(),          // store upgrades folded in
@@ -61,7 +61,15 @@ export function startRun(seed, daily) {
   G.usedItems = use;
   if (use.doubler) G.cashMult = 2;
   if (use.shield) G.pows.shield = G.powDur.shield;
-  if (use.headstart) applyHeadStart();
+  if (use.headstart) {
+    // You paid to skip the warm-up, so skip the bank cinematic too — otherwise
+    // it would drive G.dist back down the street and wipe the head start.
+    applyHeadStart();
+    G.introSkip = true;
+    G.countdownT = 1.1;
+  } else {
+    G.dist = TUNE.introStart;      // start the very first frame at the doors
+  }
   setState(STATES.COUNTDOWN);
   cb.hud && cb.hud(G, true);
 }
@@ -338,8 +346,19 @@ function stumble() {
 export function stepFixed(dt) {
   if (!G) return;
   if (state === STATES.COUNTDOWN) {
+    /* Opening cinematic: Jay sprints out of the bank doors to the kerb. He is
+       really moving down the track (negative distance sits behind the start
+       line, on the steps), so the hand-off at GO is seamless — no teleport. */
     G.countdownT -= dt;
-    if (G.countdownT <= 0) setState(STATES.RUNNING);
+    if (!G.introSkip) {
+      const p = 1 - Math.max(0, Math.min(1, G.countdownT / TUNE.introDur));
+      const eased = p * p * (3 - 2 * p);
+      G.dist = TUNE.introStart * (1 - eased);
+    }
+    if (G.countdownT <= 0) {
+      if (!G.introSkip) G.dist = 0;
+      setState(STATES.RUNNING);
+    }
     return;
   }
   if (state === STATES.CRASHED) {

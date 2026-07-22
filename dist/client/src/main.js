@@ -9,7 +9,7 @@ import { loadSave, commitSave, resetSave } from './save.js';
 import * as W from './world.js';
 import * as GAME from './game.js';
 import { STATES } from './game.js';
-import { buildRunner, runnerMesh, poseRunner, updateTrail } from './runner.js';
+import { buildRunner, runnerMesh, poseRunner, updateTrail, makeRunner } from './runner.js';
 import * as VFX from './vfx.js';
 import { initMissions } from './progression.js';
 import { attachInput, onAction } from './input.js';
@@ -140,7 +140,7 @@ function onState(s) {
   if (s === STATES.RUNNING) { musicStart(); UI.hideScreens(); }
   else if (s === STATES.PAUSED) { musicStop(); UI.showScreen('paused'); }
   else if (s === STATES.CRASHED) { musicStop(); }
-  else if (s === STATES.COUNTDOWN) { UI.hideScreens(); introT = 1.9; baseYView = 0; }
+  else if (s === STATES.COUNTDOWN) { UI.hideScreens(); introT = TUNE.introDur; baseYView = 0; }
   else if (s === STATES.HOME) { musicStop(); }
   if (s !== STATES.COUNTDOWN) UI.showCountdown(null);
 }
@@ -167,6 +167,58 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden && !window.__hrTest && GAME.getState() === STATES.RUNNING) GAME.pauseGame();
 });
 
+/* ---------------- closet preview ----------------
+   A second tiny renderer so you can see what you're buying before you buy it.
+   Built lazily the first time the closet opens; only drawn while it's visible. */
+const preview = { renderer: null, scene: null, camera: null, rig: null, parts: null, phase: 0 };
+function ensurePreview() {
+  if (preview.renderer) return true;
+  const canvas = document.getElementById('runner-preview');
+  if (!canvas) return false;
+  try {
+    preview.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  } catch { return false; }                     // no spare GL context — skip the preview
+  preview.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  preview.scene = new THREE.Scene();
+  preview.camera = new THREE.PerspectiveCamera(34, 1, 0.1, 50);
+  preview.scene.add(new THREE.HemisphereLight(0xdCE6FF, 0x2a3050, 1.25));
+  const key = new THREE.DirectionalLight(0xfff2d8, 1.0); key.position.set(-3, 5, 4); preview.scene.add(key);
+  const rim = new THREE.DirectionalLight(0x7fa8ff, 0.5); rim.position.set(4, 2, -3); preview.scene.add(rim);
+  preview.rig = new THREE.Group(); preview.scene.add(preview.rig);
+  return true;
+}
+export function refreshPreview() {
+  if (!ensurePreview()) return;
+  preview.rig.clear();
+  const built = makeRunner(loadSave().unlocks.equipped);
+  built.group.position.y = -1.15;               // centre the body in frame
+  preview.rig.add(built.group);
+  preview.parts = built.parts;
+}
+function drawPreview(dt) {
+  if (!preview.renderer || !document.getElementById('runner').classList.contains('show')) return;
+  const canvas = preview.renderer.domElement;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (!w || !h) return;
+  if (canvas.width !== w * preview.renderer.getPixelRatio() || canvas.height !== h * preview.renderer.getPixelRatio()) {
+    preview.renderer.setSize(w, h, false);
+    preview.camera.aspect = w / h; preview.camera.updateProjectionMatrix();
+  }
+  preview.camera.position.set(0, 0.35, 4.6);
+  preview.camera.lookAt(0, 0.05, 0);
+  // slow turntable + a gentle jog so shoes, trail colours and hats all read
+  preview.rig.rotation.y += dt * 0.55;
+  const p = preview.parts;
+  if (p) {
+    preview.phase += dt * 6.5;
+    const sw = Math.sin(preview.phase), swA = Math.sin(preview.phase + Math.PI);
+    p.body.rotation.x = 0.1; p.body.position.y = Math.abs(Math.sin(preview.phase)) * 0.05;
+    p.legL.rotation.x = sw * 0.75; p.legR.rotation.x = swA * 0.75;
+    p.armL.rotation.x = swA * 0.65 - 0.15; p.armR.rotation.x = sw * 0.65 - 0.15;
+  }
+  preview.renderer.render(preview.scene, preview.camera);
+}
+
 /* ---------------- flows ---------------- */
 function startRunFlow(seed, daily) {
   audioInit(); audioResume();
@@ -181,7 +233,8 @@ UI.initUI({
   resume: () => { GAME.resumeGame(); UI.hideScreens(); },
   pause: () => GAME.pauseGame(),
   skipTutorial: () => GAME.skipTutorial(),
-  rebuildRunner: () => buildRunner(loadSave().unlocks.equipped),
+  rebuildRunner: () => { buildRunner(loadSave().unlocks.equipped); refreshPreview(); },
+  refreshPreview,
   replayTutorial: () => { const s = loadSave(); s.tutorialDone = false; commitSave(); UI.showToast('Tutorial will replay on your next run.'); },
 });
 
@@ -247,7 +300,11 @@ function updateView(dt) {
   /* pose */
   if (st === STATES.CRASHED) poseRunner({ mode: 'crash', dt, time: viewTime, stumble: 0 });
   else if (st === STATES.RESULTS) poseRunner({ mode: 'celebrate', time: viewTime, stumble: 0 });
-  else if (st === STATES.HOME || st === STATES.COUNTDOWN) poseRunner({ mode: 'idle', time: viewTime, stumble: 0 });
+  else if (st === STATES.COUNTDOWN) {           // sprinting out of the bank
+    G.runPhase += dt * 16;
+    poseRunner({ mode: 'run', phase: G.runPhase, time: viewTime, stumble: 0, lean: 0 });
+  }
+  else if (st === STATES.HOME) poseRunner({ mode: 'idle', time: viewTime, stumble: 0 });
   else {
     G.runPhase += dt * G.speed * 0.9;
     const mode = G.py > 0.02 ? 'jump' : (G.sliding > 0 ? 'slide' : 'run');
@@ -281,12 +338,15 @@ function updateView(dt) {
   }
 
   /* the patrol — visible whenever the gap is short enough to be seen */
-  const chasing = st === STATES.RUNNING || st === STATES.CRASHED;
+  const chasing = st === STATES.RUNNING || st === STATES.CRASHED || st === STATES.COUNTDOWN;
   for (let i = 0; i < officers.length; i++) {
     const om = officers[i];
     om.visible = chasing;
     if (!chasing) continue;
-    const od = G.dist - G.gap - i * 1.5;
+    // during the opening they pile out of the doors right on his heels
+    const od = st === STATES.COUNTDOWN
+      ? G.dist - (2.2 + i * 1.1)
+      : G.dist - G.gap - i * 1.5;
     const tLX = G.laneX + (i - 1) * 0.85;
     om.userData.lx = lerpNum(om.userData.lx ?? tLX, tLX, 1 - Math.exp(-dt * 4));
     GAME.worldPos(od, Math.max(-3, Math.min(3, om.userData.lx)), 0, oPos);
@@ -322,16 +382,19 @@ function updateView(dt) {
   /* opening beat: burst out of the bank. Camera sits ahead of Jay looking
      back at him + the bank, then swings to the chase cam as the run begins. */
   introT = Math.max(0, introT - dt);
-  const introK = smooth(Math.min(1, Math.max(0, (introT - 0.5) / 1.4)));
+  // hold the cinematic framing, then swing behind him and settle before GO
+  const introK = smooth(Math.min(1, Math.max(0, (introT - 0.8) / 1.5)));
   if (introK > 0.001) {
-    // ahead of Jay and up high, looking back over him at the City Trust facade
-    introPos.set(pPos.x + fx * 10, pPos.y + 5.0, pPos.z + fz * 10);
-    introLook.set(pPos.x - fx * 13, pPos.y + 6.5, pPos.z - fz * 13);
+    // ahead of Jay at chest height, framing HIM with the bank as the backdrop
+    introPos.set(pPos.x + fx * 7, pPos.y + 2.3, pPos.z + fz * 7);
+    introLook.set(pPos.x - fx * 3, pPos.y + 1.8, pPos.z - fz * 3);
     camPos.lerp(introPos, introK);
     lookAt.lerp(introLook, introK);
   }
   if (G.shake > 0 && !rm) { camPos.x += (Math.random() - 0.5) * G.shake * 0.7; camPos.y += (Math.random() - 0.5) * G.shake * 0.6; }
-  W.camera.position.lerp(camPos, 1 - Math.exp(-dt * (introK > 0.05 ? 9 : 14)));
+  // snap on the opening frame so the cinematic doesn't start mid-glide
+  if (introT > TUNE.introDur - 0.06) W.camera.position.copy(camPos);
+  else W.camera.position.lerp(camPos, 1 - Math.exp(-dt * (introK > 0.05 ? 9 : 14)));
   W.camera.lookAt(lookAt);
   const fovKick = rm ? 0.25 : 0.7;
   W.camera.fov = 60 + Math.max(0, G.speed - TUNE.speed0) * fovKick; W.camera.updateProjectionMatrix();
@@ -351,8 +414,8 @@ function updateView(dt) {
 
   /* countdown digits */
   if (st === STATES.COUNTDOWN) {
-    const n = Math.ceil(G.countdownT / 0.433);
-    UI.showCountdown(n > 0 ? n : 'GO');
+    // let the cinematic breathe, then count the hand-off in over the last 1.5s
+    UI.showCountdown(G.countdownT > 1.5 ? null : Math.max(1, Math.ceil(G.countdownT / 0.5)));
   }
 }
 function lerpAngle(a, b, t) { let d = b - a; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; return a + d * t; }
@@ -379,6 +442,7 @@ function frame(now) {
   }
   updateDebug(dt);
   W.renderer.render(W.scene, W.camera);
+  drawPreview(dt);
 
   /* adaptive quality: sustained slow frames step DPR + decor down */
   adaptT += dt;
