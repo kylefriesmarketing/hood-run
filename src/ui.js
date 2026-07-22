@@ -25,8 +25,10 @@ export function initUI(h) {
   for (const id of ['runner-back', 'missions-back', 'settings-back']) bindTap(id, () => { refreshHome(); showScreen('home'); });
   bindTap('pause-btn', () => hooks.pause());
   bindTap('tut-skip', () => hooks.skipTutorial());
+  bindScrollFades();
   refreshHome();
   applySettings();
+  requestAnimationFrame(() => syncScrollFade($('home').querySelector('.sheet-body')));
 }
 /* short haptic tick where supported — silently ignored elsewhere */
 export function haptic(ms) {
@@ -43,6 +45,21 @@ const SCREENS = ['home', 'runner', 'missions', 'settings', 'over', 'paused'];
 export function showScreen(name) {
   for (const s of SCREENS) $(s)?.classList.toggle('show', s === name);
   $('hud').classList.toggle('show', name === null);
+  if (name) requestAnimationFrame(() => syncScrollFade($(name)?.querySelector('.sheet-body')));
+}
+/* mark scrollable bodies so the bottom edge fades instead of hard-clipping */
+function syncScrollFade(body) {
+  if (!body) return;
+  const scrollable = body.scrollHeight > body.clientHeight + 2;
+  body.classList.toggle('can-scroll', scrollable);
+  body.classList.toggle('at-end', scrollable && body.scrollTop + body.clientHeight >= body.scrollHeight - 3);
+}
+function bindScrollFades() {
+  for (const s of SCREENS) {
+    const body = $(s)?.querySelector('.sheet-body');
+    if (body) body.addEventListener('scroll', () => syncScrollFade(body), { passive: true });
+  }
+  addEventListener('resize', () => { for (const s of SCREENS) syncScrollFade($(s)?.querySelector('.sheet-body')); });
 }
 export function hideScreens() { for (const s of SCREENS) $(s)?.classList.remove('show'); $('hud').classList.add('show'); }
 
