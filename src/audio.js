@@ -7,6 +7,7 @@ const A = {
   beatOn: false, next: 0, step: 0, timer: null,
   layer2: 0, layer3: 0,          // 0..1 target mix
   musicVol: 0.7, sfxVol: 0.8,
+  siren: null,
 };
 
 export function audioInit() {
@@ -26,6 +27,44 @@ export function setVolumes(music, sfx) {
 export function musicStart() { A.beatOn = true; if (A.ctx) { A.next = A.ctx.currentTime + 0.05; } }
 export function musicStop() { A.beatOn = false; }
 export function musicLayers(l2, l3) { A.layer2 = l2; A.layer3 = l3; }
+
+/* ---- police siren ----
+   A classic wail: a horn oscillator whose pitch is swept up and down by a slow
+   LFO, run through a bandpass for the "cardboard cone" character. Held as a
+   node graph on A.siren so it can be started, faded and stopped cleanly. */
+export function sirenStart(vol = 0.14) {
+  if (!A.ctx || A.siren) return;
+  const c = A.ctx, t = c.currentTime;
+  const carrier = c.createOscillator(); carrier.type = 'sawtooth'; carrier.frequency.value = 760;
+  const lfo = c.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = 0.7;   // wail rate
+  const lfoGain = c.createGain(); lfoGain.gain.value = 300;                          // ±300 Hz sweep
+  lfo.connect(lfoGain); lfoGain.connect(carrier.frequency);
+  const band = c.createBiquadFilter(); band.type = 'bandpass'; band.frequency.value = 1100; band.Q.value = 3;
+  const g = c.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + 0.25);
+  carrier.connect(band); band.connect(g); g.connect(A.sfxBus);
+  carrier.start(t); lfo.start(t);
+  A.siren = { carrier, lfo, g };
+}
+export function sirenStop(fade = 0.6) {
+  if (!A.ctx || !A.siren) return;
+  const { carrier, lfo, g } = A.siren; const t = A.ctx.currentTime;
+  g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(g.gain.value, t);
+  g.gain.linearRampToValueAtTime(0, t + fade);
+  carrier.stop(t + fade + 0.05); lfo.stop(t + fade + 0.05);
+  A.siren = null;
+}
+/* a single distant wail that sweeps past — tension beat during the chase */
+export function sirenPass() {
+  if (!A.ctx) return; const c = A.ctx, t = c.currentTime;
+  const o = c.createOscillator(); o.type = 'sawtooth';
+  o.frequency.setValueAtTime(900, t);
+  o.frequency.linearRampToValueAtTime(1150, t + 0.35);
+  o.frequency.linearRampToValueAtTime(760, t + 0.9);
+  const f = c.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1200; f.Q.value = 4;
+  const g = c.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.09, t + 0.3);
+  g.gain.linearRampToValueAtTime(0, t + 1.1);
+  o.connect(f); f.connect(g); g.connect(A.sfxBus); o.start(t); o.stop(t + 1.15);
+}
 
 /* duck the music under important warnings so cues cut through (bible §13) */
 export function duck(amount = 0.45, hold = 0.18, release = 0.35) {

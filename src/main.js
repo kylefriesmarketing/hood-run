@@ -13,7 +13,7 @@ import { buildRunner, runnerMesh, poseRunner, updateTrail, makeRunner } from './
 import * as VFX from './vfx.js';
 import { initMissions } from './progression.js';
 import { attachInput, onAction } from './input.js';
-import { audioInit, audioResume, musicStart, musicStop, musicLayers, sfx } from './audio.js';
+import { audioInit, audioResume, musicStart, musicStop, musicLayers, sfx, sirenStart, sirenStop, sirenPass } from './audio.js';
 import * as UI from './ui.js';
 
 /* ---------------- boot ---------------- */
@@ -137,19 +137,25 @@ function colorFor(k) { return ({ boost: 0xffd23c, magnet: 0x3bd6c6, doublestyle:
 
 function onState(s) {
   document.body.classList.toggle('playing', s === STATES.RUNNING || s === STATES.COUNTDOWN);
-  if (s === STATES.RUNNING) { musicStart(); UI.hideScreens(); }
-  else if (s === STATES.PAUSED) { musicStop(); UI.showScreen('paused'); }
-  else if (s === STATES.CRASHED) { musicStop(); }
-  else if (s === STATES.COUNTDOWN) {
-    UI.hideScreens(); introT = TUNE.introDur; baseYView = 0;
+  document.body.classList.toggle('intro', s === STATES.COUNTDOWN);
+  if (s === STATES.RUNNING) {
+    musicStart(); UI.hideScreens();
+    setTimeout(() => sirenStop(1.4), 900);      // wail into the getaway, then fade under music
+  } else if (s === STATES.PAUSED) {
+    musicStop(); UI.showScreen('paused');
+  } else if (s === STATES.CRASHED) {
+    musicStop(); sirenStop(0.4);
+  } else if (s === STATES.HOME) {
+    musicStop(); sirenStop(0.4);
+  } else if (s === STATES.COUNTDOWN) {
+    UI.hideScreens(); introT = TUNE.introDur; baseYView = 0; doorBurst = false;
     // timers still fire when rAF is starved, so this guarantees the hand-off
     clearTimeout(introFailsafe);
     introFailsafe = setTimeout(() => {
       if (GAME.forceStartIfStuck()) console.warn('[hood-run] intro stalled — handed off via failsafe');
     }, (TUNE.introDur + 1.2) * 1000);
   }
-  else if (s === STATES.HOME) { musicStop(); }
-  if (s !== STATES.COUNTDOWN) { clearTimeout(introFailsafe); UI.showCountdown(null); }
+  if (s !== STATES.COUNTDOWN) { clearTimeout(introFailsafe); UI.showCountdown(null); document.body.classList.remove('intro'); }
 }
 
 /* ---------------- input wiring ---------------- */
@@ -233,6 +239,7 @@ function startRunFlow(seed, daily) {
   W.applyDistrict('block', true);
   GAME.startRun(seed, daily);
   sfx.alarm();
+  sirenStart();                 // wailing squad cars during the run-out
 }
 UI.initUI({
   startRun: (daily) => startRunFlow(undefined, daily),
@@ -246,7 +253,7 @@ UI.initUI({
 });
 
 /* ---------------- view ---------------- */
-let camAng = 0, playerAng = 0, viewTime = 0, whistleT = 3, partyFxT = 0, introT = 0, baseYView = 0;
+let camAng = 0, playerAng = 0, viewTime = 0, whistleT = 3, partyFxT = 0, introT = 0, baseYView = 0, doorBurst = false;
 let introFailsafe = null;
 const camPos = new THREE.Vector3(), lookAt = new THREE.Vector3(), pPos = new THREE.Vector3(), oPos = new THREE.Vector3();
 const smooth = t => t * t * (3 - 2 * t);
@@ -312,6 +319,12 @@ function updateView(dt) {
     const introV = TUNE.speed0 * (1 - Math.max(0, G.countdownT) / TUNE.introDur);
     G.runPhase += dt * (4 + introV * 0.9);
     poseRunner({ mode: 'run', phase: G.runPhase, time: viewTime, stumble: 0, lean: 0 });
+    // burst of loose bills the moment he crosses the doorway plane (dist -8)
+    if (!doorBurst && G.dist > -8) {
+      doorBurst = true;
+      VFX.cashBurst(pPos.x, pPos.y, pPos.z);
+      if (!rm) G.shake = Math.max(G.shake, 0.35);
+    }
   }
   else if (st === STATES.HOME) poseRunner({ mode: 'idle', time: viewTime, stumble: 0 });
   else {
@@ -368,7 +381,12 @@ function updateView(dt) {
   }
   if (st === STATES.RUNNING) {
     whistleT -= dt;
-    if (whistleT < 0) { if (G.gap < 7) sfx.whistle(); whistleT = 3 + Math.random() * 3; }
+    if (whistleT < 0) {
+      // the closer the patrol, the more it's a siren pass vs a lone whistle
+      if (G.gap < 4.5) sirenPass();
+      else if (G.gap < 7) sfx.whistle();
+      whistleT = 3 + Math.random() * 3;
+    }
   }
 
   /* dog cameo during Block Party */
@@ -382,9 +400,18 @@ function updateView(dt) {
     legs[2].rotation.x = Math.sin(ph + Math.PI) * 0.9; legs[3].rotation.x = Math.sin(ph + Math.PI) * 0.9;
   } else dogCameo.visible = false;
 
-  /* camera — normal chase framing */
+  /* camera — normal chase framing. During the opening it starts tighter and
+     lower (over-the-shoulder, inside the lobby) and dollies out to the chase
+     offset, resolving to exactly 0 at the hand-off so it's position-continuous
+     with the run — no snap. */
   const fx = -Math.sin(camAng), fz = -Math.cos(camAng);
-  camPos.set(pPos.x - fx * 6.8, pPos.y + 3.3 + G.py * 0.35, pPos.z - fz * 6.8);
+  const ik = st === STATES.COUNTDOWN ? Math.max(0, Math.min(1, G.countdownT / TUNE.introDur)) : 0;
+  // Pull BACK and up at the start so the doorway + lobby walls frame him, then
+  // settle forward into the chase. (Pulling closer got the camera so near the
+  // wide doorway that the walls fell outside the FOV and the framing vanished.)
+  const back = 6.8 + 1.9 * ik;              // 8.7 deep-in-lobby → 6.8 chase
+  const high = 3.3 + 0.9 * ik;              // 4.2 → 3.3 chase
+  camPos.set(pPos.x - fx * back, pPos.y + high + G.py * 0.35, pPos.z - fz * back);
   lookAt.set(pPos.x + fx * 9, pPos.y + 1.4 + G.py * 0.5, pPos.z + fz * 9);
 
   /* The opening uses the ORDINARY chase camera — behind Jay, facing the way he

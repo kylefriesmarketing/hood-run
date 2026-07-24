@@ -99,6 +99,17 @@ export function crashBurst(x, y, z) {
       grav: -9, size: 0.2 + Math.random() * 0.16, color: cols[i % cols.length], add: false });
   }
 }
+/* a spray of loose bills — fired as he bursts out through the bank doors */
+export function cashBurst(x, y, z) {
+  if (reduced) return;
+  const cols = [0x7ac47a, 0x8fd68f, 0x5fa86a, 0xdff3e2];
+  for (let i = 0; i < 16; i++) {
+    const a = Math.random() * Math.PI * 2, s = 1.5 + Math.random() * 3;
+    emit(x + (Math.random() - 0.5) * 1.2, y + 0.6 + Math.random() * 1.2, z,
+      { life: 0.9 + Math.random() * 0.6, vx: Math.cos(a) * s, vy: 1 + Math.random() * 2.5, vz: Math.sin(a) * s + 2.5,
+        grav: -3.5, size: 0.16 + Math.random() * 0.1, color: cols[i % cols.length], add: false });
+  }
+}
 export function powBurst(x, y, z, color) {
   if (reduced) return;
   for (let i = 0; i < 14; i++) {

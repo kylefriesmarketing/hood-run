@@ -163,6 +163,16 @@
       repeating-conic-gradient(from 0deg at 50% 50%, rgba(255,255,255,.07) 0deg 1.5deg, transparent 1.5deg 9deg); }
   body.reduced-motion #party-vig, body.reduced-motion #speed-lines{ display:none; }
 
+  /* squad-car light wash during the opening: red and blue strobe the edges */
+  #siren-wash{ position:fixed; inset:0; pointer-events:none; z-index:4; opacity:0; }
+  body.intro #siren-wash{ opacity:1; animation:sirenWash 0.9s steps(1) infinite; }
+  @keyframes sirenWash{
+    0%   { box-shadow:inset 130px 0 150px -80px rgba(255,40,40,.65), inset -130px 0 150px -80px rgba(40,80,255,.2); }
+    50%  { box-shadow:inset 130px 0 150px -80px rgba(255,40,40,.2), inset -130px 0 150px -80px rgba(40,80,255,.65); }
+    100% { box-shadow:inset 130px 0 150px -80px rgba(255,40,40,.65), inset -130px 0 150px -80px rgba(40,80,255,.2); }
+  }
+  body.reduced-motion #siren-wash{ display:none; }
+
   #debug{ position:fixed; top:calc(var(--safe-t) + 130px); left:12px; z-index:30; display:none; margin:0;
     background:rgba(6,10,18,.86); color:#8affc0; font:11px/1.45 ui-monospace,'Consolas',monospace;
     padding:10px 12px; border-radius:var(--r-sm); border:1px solid rgba(138,255,192,.3);
@@ -395,6 +405,7 @@
 </div>
 
 <div id="party-vig"></div>
+<div id="siren-wash"></div>
 <div id="speed-lines"></div>
 <div id="callout"></div>
 <div id="countdown"></div>
