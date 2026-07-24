@@ -1101,25 +1101,30 @@ function buildRooftopDressing(g, seg, d, opts) {
 
 function buildAlleyDressing(g, seg, d, opts) {
   const L = seg.len;
-  // tight brick walls both sides, right at the road edge
-  const texes = buildingTexes(seg.baseDistrict || 'block');
+  // The corridor walls must run ALONG the alley and clear the drivable lanes:
+  // lane centres are 0/±2.2 and the runner reaches ±2.62, so the wall inner face
+  // sits at ALLEY_WALL_X (3.4) — tight but always passable. (The old version
+  // placed chunky rotated buildings whose 8–13-unit width jutted into the road,
+  // so the runner and the trailing camera clipped straight through them.)
+  const ALLEY_WALL_X = 3.4, WALL_TH = 3.0, WALL_H = 12;
+  const brickTex = pick(buildingTexes(seg.baseDistrict || 'block'));
+  const plain = cmat(0x7a6a52);
   for (const side of [-1, 1]) {
-    let dpos = 2;
-    while (dpos < L - 4) {
-      const w = rand(8, 13), h = rand(7, 12);
-      const roofM = cmat(0x6a5a48);
-      const bld = new THREE.Mesh(BOX, [roofM, roofM, roofM, roofM, new THREE.MeshLambertMaterial({ map: pick(texes) }), roofM]);
-      bld.position.set(side * (HALF + 5 - 1.2), h / 2, -(dpos + w / 2));
-      bld.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2;
-      bld.scale.set(10, h, w);
-      g.add(bld);
-      if (Math.random() < 0.5) { const fe = mkFireEscape(); fe.position.set(side * (HALF - 0.4), 0, -(dpos + w / 2)); fe.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2; g.add(fe); }
-      dpos += w;
-    }
-    // dumpsters/crates against walls
-    for (let d2 = rand(6, 14); d2 < L - 6; d2 += rand(10, 18)) {
-      if (Math.random() < 0.5) { const dm = mkHazardMesh('dumpster'); dm.scale.setScalar(0.7); dm.position.set(side * (HALF - 0.9), 0.02, -d2); dm.rotation.y = Math.PI / 2; g.add(dm); }
-      else g.add(box(0.7, 0.6, 0.7, 0xb8894c, side * (HALF - 0.7), 0.32, -d2));
+    // one long wall the length of the segment, no rotation, brick on the face
+    // that points at the road: -x (index 1) for the right wall, +x (0) for left.
+    // Tile the texture down the alley so it doesn't stretch into a smear.
+    const face = new THREE.MeshLambertMaterial({ map: brickTex.clone() });
+    face.map.wrapS = face.map.wrapT = THREE.RepeatWrapping; face.map.repeat.set(L / 10, 1); face.map.needsUpdate = true;
+    const mats = side > 0 ? [plain, face, plain, plain, plain, plain] : [face, plain, plain, plain, plain, plain];
+    const wall = new THREE.Mesh(BOX, mats);
+    wall.scale.set(WALL_TH, WALL_H, L);
+    wall.position.set(side * (ALLEY_WALL_X + WALL_TH / 2), WALL_H / 2, -L / 2);
+    g.add(wall);
+    // fire escapes flush to the wall, above head height so they never block a lane
+    for (let dpos = rand(6, 12); dpos < L - 6; dpos += rand(12, 20)) {
+      const fe = mkFireEscape();
+      fe.position.set(side * (ALLEY_WALL_X + 0.05), 1.6, -dpos);
+      fe.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2; fe.scale.setScalar(0.8); g.add(fe);
     }
   }
   // overhead clotheslines decor (visual, above play height)
