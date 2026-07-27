@@ -35,6 +35,10 @@ const PROFILES = {
   // at a different scale from the bricks it is meant to be lighting
   facade:   { set: 'brick',    repeat: [7, 9],  normalScale: 0.75 },
   wall:     { set: 'concrete', repeat: [2, 2],  normalScale: 0.55 },
+  // building flanks + roofs: tint stays flat colour (they are usually in
+  // shadow), but grain + AO stop them reading as untextured slabs
+  sideWall: { set: 'brick',    repeat: [5, 6],  normalScale: 0.60 },
+  roof:     { set: 'concrete', repeat: [3, 4],  normalScale: 0.50 },
 };
 
 const colorImages = {};        // name -> HTMLImageElement

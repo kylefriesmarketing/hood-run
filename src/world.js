@@ -552,6 +552,17 @@ export function cmat(color, opts = {}) {
 export function box(w, h, d, color, x = 0, y = 0, z = 0, m) {
   const b = new THREE.Mesh(BOX, m || cmat(color)); b.scale.set(w, h, d); b.position.set(x, y, z); return b;
 }
+/* Flat-tint materials that additionally carry a photo grain profile — building
+   flanks, roofs, alley walls. Separate cache from cmat on purpose: cmat serves
+   hundreds of small props where a brick normal map would be nonsense. */
+const grainMatCache = {};
+export function grainMat(color, profileKey) {
+  const key = color + '|' + profileKey;
+  if (!grainMatCache[key]) grainMatCache[key] = markShared(new THREE.MeshStandardMaterial({
+    color, roughness: 0.9, metalness: 0.02, ...(pbrProfile(profileKey) || {}),
+  }));
+  return grainMatCache[key];
+}
 const shadowGeo = markShared(new THREE.CircleGeometry(0.6, 16));
 const shadowMat = markShared(new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.3, depthWrite: false }));
 export function blobShadow(scale = 1) {
@@ -574,7 +585,7 @@ export function disposeGroup(g) {
     const mats = Array.isArray(o.material) ? o.material : [o.material];
     for (const m of mats) {
       if (!m || m.__shared) continue;
-      for (const slot of ['map', 'alphaMap', 'emissiveMap']) {
+      for (const slot of ['map', 'alphaMap', 'emissiveMap', 'bumpMap']) {
         const t = m[slot];
         if (t && !t.__shared) t.dispose();
       }
@@ -1381,8 +1392,8 @@ function buildStreetDressing(g, seg, d, opts, dd) {
            costs nothing, and the cmat cache keeps it to one material each. */
         // kept fairly light: these faces are usually in shadow, and on the dark
         // districts a heavier multiplier crushed them to pure black on screen
-        const sideM = cmat(new THREE.Color(d.brickset[0]).multiplyScalar(0.82).getHex());
-        const roofM = cmat(new THREE.Color(d.brickset[0]).multiplyScalar(0.6).getHex());
+        const sideM = grainMat(new THREE.Color(d.brickset[0]).multiplyScalar(0.82).getHex(), 'sideWall');
+        const roofM = grainMat(new THREE.Color(d.brickset[0]).multiplyScalar(0.6).getHex(), 'roof');
         const faceTex = pick(texes);
         const faceM = new THREE.MeshStandardMaterial({
           map: faceTex, roughness: 0.92, metalness: 0,
@@ -1476,7 +1487,7 @@ function buildRooftopDressing(g, seg, d, opts) {
       noise(g2, w, h, 900, 0.2, false); noise(g2, w, h, 500, 0.12, true);
       g2.strokeStyle = 'rgba(20,20,26,.6)'; g2.lineWidth = 3;          // tar seams
       for (let y = 16; y < h; y += 32) { g2.beginPath(); g2.moveTo(0, y); g2.lineTo(w, y); g2.stroke(); }
-    }, { repeat: true }) }));
+    }, { repeat: true }), ...(pbrProfile('roof') || {}) }));
   const dt = deck.material.map; dt.repeat.set(1, (L - 6) / 10);
   deck.rotation.x = -Math.PI / 2; deck.position.set(0, 0.02, -L / 2); deck.userData.ownGeo = true;
   g.add(deck);
@@ -1544,14 +1555,26 @@ function buildAlleyDressing(g, seg, d, opts) {
   // placed chunky rotated buildings whose 8–13-unit width jutted into the road,
   // so the runner and the trailing camera clipped straight through them.)
   const ALLEY_WALL_X = 3.4, WALL_TH = 3.0, WALL_H = 12;
-  const brickTex = pick(buildingTexes(seg.baseDistrict || 'block'));
-  const plain = cmat(0x7a6a52);
+  // prefer a walk-up facade: a STOREFRONT tiled sideways repeats its sign six
+  // times down the corridor ("CROWN FRIED CROWN FRIED..."), and an alley should
+  // read as tenement backs anyway
+  const texes = buildingTexes(seg.baseDistrict || 'block');
+  const walkups = texes.filter(t => !t.userData.layout?.store && !t.userData.layout?.glass);
+  const brickTex = pick(walkups.length ? walkups : texes);
+  const plain = grainMat(0x7a6a52, 'wall');
   for (const side of [-1, 1]) {
     // one long wall the length of the segment, no rotation, brick on the face
     // that points at the road: -x (index 1) for the right wall, +x (0) for left.
     // Tile the texture down the alley so it doesn't stretch into a smear.
     const face = new THREE.MeshStandardMaterial({ map: brickTex.clone() });
     face.map.wrapS = face.map.wrapT = THREE.RepeatWrapping; face.map.repeat.set(L / 10, 1); face.map.needsUpdate = true;
+    // the facade's own derived bump, tiled in step with the colour — a bump
+    // whose repeat differs from its map slides the relief off the bricks
+    if (brickTex.userData.bump) {
+      const bm = brickTex.userData.bump.clone();
+      bm.wrapS = bm.wrapT = THREE.RepeatWrapping; bm.repeat.copy(face.map.repeat); bm.needsUpdate = true;
+      face.bumpMap = bm; face.bumpScale = 1.2;
+    }
     const mats = side > 0 ? [plain, face, plain, plain, plain, plain] : [face, plain, plain, plain, plain, plain];
     const wall = new THREE.Mesh(BOX, mats);
     wall.scale.set(WALL_TH, WALL_H, L);
