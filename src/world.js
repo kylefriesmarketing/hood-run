@@ -11,14 +11,13 @@ const pick = a => a[Math.floor(Math.random() * a.length)];
 const irand = (a, b) => Math.floor(rand(a, b + 1));
 
 /* ---------------- boot ---------------- */
-let hemi, sun, skyGroup, groundPlane;
+let hemi, sun, skyGroup, groundPlane, skyDome;
 export function initWorld(canvas) {
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.setSize(innerWidth, innerHeight);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x9fc7e8);
   scene.fog = new THREE.Fog(0xb8d8ec, 40, 175);
   camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.1, 400);
   addEventListener('resize', () => {
@@ -27,6 +26,51 @@ export function initWorld(canvas) {
   });
   hemi = new THREE.HemisphereLight(0xcfe3f5, 0x77875f, 1.05); scene.add(hemi);
   sun = new THREE.DirectionalLight(0xfff1cf, 0.95); sun.position.set(-24, 38, 14); scene.add(sun);
+
+  /* Real sun shadows. The runner used to float on a blob decal; a cast shadow
+     grounds him and throws long building shadows across the road. The frustum
+     is deliberately tight and follows the player, so the shadow pass only ever
+     draws the block you are actually on. */
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(1024, 1024);
+  sun.shadow.camera.left = -26; sun.shadow.camera.right = 26;
+  sun.shadow.camera.top = 30; sun.shadow.camera.bottom = -22;
+  sun.shadow.camera.near = 1; sun.shadow.camera.far = 120;
+  sun.shadow.bias = -0.0016;
+  sun.shadow.normalBias = 0.035;
+  scene.add(sun.target);
+
+  /* Gradient sky dome. A flat background colour was the single most obviously
+     "cheap" thing on screen; this gives a real horizon falloff plus a sun glow,
+     and its uniforms are lerped by the same district transition as the lights. */
+  skyDome = new THREE.Mesh(new THREE.SphereGeometry(300, 24, 16), new THREE.ShaderMaterial({
+    side: THREE.BackSide, depthWrite: false, fog: false,
+    uniforms: {
+      top: { value: new THREE.Color(0x5f9fd8) },
+      bottom: { value: new THREE.Color(0xcfe6f5) },
+      sunCol: { value: new THREE.Color(0xfff3d0) },
+      sunDir: { value: new THREE.Vector3(70, 95, -150).normalize() },
+    },
+    vertexShader: `
+      varying vec3 vW;
+      void main(){ vW = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+    fragmentShader: `
+      uniform vec3 top; uniform vec3 bottom; uniform vec3 sunCol; uniform vec3 sunDir;
+      varying vec3 vW;
+      void main(){
+        vec3 d = normalize(vW);
+        float h = clamp(d.y * 0.5 + 0.5, 0.0, 1.0);
+        vec3 col = mix(bottom, top, pow(h, 0.9));
+        float s = max(dot(d, normalize(sunDir)), 0.0);
+        col += sunCol * pow(s, 40.0) * 0.45;          // tight sun bloom (a disc mesh sits here too)
+        col += sunCol * pow(s, 5.0) * 0.10;           // broad atmospheric haze
+        gl_FragColor = vec4(col, 1.0);
+      }`,
+  }));
+  skyDome.renderOrder = -1000;
+  scene.add(skyDome);
 
   skyGroup = new THREE.Group(); scene.add(skyGroup);
   { // sun disc + drifting clouds
@@ -45,13 +89,30 @@ export function initWorld(canvas) {
     }
   }
   groundPlane = new THREE.Mesh(new THREE.PlaneGeometry(520, 520), new THREE.MeshLambertMaterial({ color: 0x6b7a5f }));
-  groundPlane.rotation.x = -Math.PI / 2; groundPlane.position.y = -0.06; scene.add(groundPlane);
+  groundPlane.rotation.x = -Math.PI / 2; groundPlane.position.y = -0.06;
+  groundPlane.receiveShadow = true; scene.add(groundPlane);
   return { scene, camera, renderer };
 }
 export function trackView(px, pz) {
   groundPlane.position.set(px, -0.06, pz);
   skyGroup.position.set(px, 0, pz);
+  skyDome.position.set(px, 0, pz);        // dome is infinite — keep it centred on the view
+  /* Carry the sun (and its shadow frustum) along with the player. The offset is
+     deliberately steep: shadow length is height * (xOffset/yOffset), so a low
+     sun threw 15-tall buildings clear across the road and put the whole play
+     area — and every hazard on it — in shade. At 12/46 the same building lands
+     its shadow on the sidewalk, keeping the lanes lit and readable. */
+  sun.position.set(px - 12, 46, pz + 15);
+  sun.target.position.set(px, 0, pz);
+  sun.target.updateMatrixWorld();
 }
+/* shadows are the first thing adaptive quality drops on a slow device */
+export function setShadowsEnabled(on) {
+  if (renderer.shadowMap.enabled === on) return;
+  renderer.shadowMap.enabled = on;
+  scene.traverse(o => { if (o.isMesh && o.material) o.material.needsUpdate = true; });
+}
+export function shadowsEnabled() { return renderer.shadowMap.enabled; }
 
 /* ---------------- district lighting transitions ---------------- */
 const lightLerp = { t: 1, from: null, to: null };
@@ -65,15 +126,25 @@ export function applyDistrict(name, immediate) {
   if (immediate) { setLights(to); lightLerp.t = 1; lightLerp.to = to; return; }
   lightLerp.from = snapLights(); lightLerp.to = to; lightLerp.t = 0;
 }
+const curSky = new THREE.Color(0x9fc7e8);      // drives the dome gradient
 function snapLights() {
-  return { sky: scene.background.clone(), fog: scene.fog.color.clone(), fogNear: scene.fog.near, fogFar: scene.fog.far,
+  return { sky: curSky.clone(), fog: scene.fog.color.clone(), fogNear: scene.fog.near, fogFar: scene.fog.far,
     hemiSky: hemi.color.clone(), hemiGnd: hemi.groundColor.clone(), hemiI: hemi.intensity,
     sunC: sun.color.clone(), sunI: sun.intensity, ground: groundPlane.material.color.clone() };
 }
 function setLights(v) {
-  scene.background.copy(v.sky); scene.fog.color.copy(v.fog); scene.fog.near = v.fogNear; scene.fog.far = v.fogFar;
-  hemi.color.copy(v.hemiSky); hemi.groundColor.copy(v.hemiGnd); hemi.intensity = v.hemiI;
+  curSky.copy(v.sky);
+  scene.fog.color.copy(v.fog); scene.fog.near = v.fogNear; scene.fog.far = v.fogFar;
+  // shadowed surfaces are lit by the hemisphere alone, so lift it to stop the
+  // street canyon going muddy now that buildings actually cast
+  hemi.color.copy(v.hemiSky); hemi.groundColor.copy(v.hemiGnd); hemi.intensity = v.hemiI * 1.3;
   sun.color.copy(v.sunC); sun.intensity = v.sunI; groundPlane.material.color.copy(v.ground);
+  // derive the dome gradient from the district's sky + fog: deeper at zenith,
+  // hazier at the horizon where it meets the fog the buildings fade into
+  const u = skyDome.material.uniforms;
+  u.top.value.copy(v.sky).multiplyScalar(0.68);
+  u.bottom.value.copy(v.sky).lerp(v.fog, 0.55);
+  u.sunCol.value.copy(v.sunC);
 }
 export function updateLights(dt) {
   if (lightLerp.t >= 1 || !lightLerp.to) return;
@@ -921,6 +992,15 @@ export function buildSegment(seg, opts) {
     const paint = new THREE.Mesh(new THREE.PlaneGeometry(LANE_W - 0.6, 10), new THREE.MeshBasicMaterial({ color: beam, transparent: true, opacity: 0.3 }));
     paint.rotation.x = -Math.PI / 2; paint.position.set(side * LANE_W, 0.02, -L + 9); paint.userData.ownGeo = true; g.add(paint);
   }
+  /* Shadow flags for the whole block. Flat ground-hugging planes (road, paint,
+     decals) only receive — letting them cast produces z-fighting acne on the
+     surface they are lying on. Everything with height does both. */
+  g.traverse(o => {
+    if (!o.isMesh) return;
+    const flat = o.geometry && o.geometry.type === 'PlaneGeometry';
+    o.castShadow = !flat;
+    o.receiveShadow = true;
+  });
   scene.add(g);
   seg.group = g;
   return g;
@@ -965,8 +1045,16 @@ function buildStreetDressing(g, seg, d, opts, dd) {
         dpos += 9;
       } else {
         const [h0, h1] = d.buildingH, h = rand(h0, h1), depth = 10;
-        const roofM = cmat(0x8a7a68);
-        const bld = new THREE.Mesh(BOX, [roofM, roofM, roofM, roofM, new THREE.MeshLambertMaterial({ map: pick(texes) }), roofM]);
+        /* Only the road-facing face (+z) carries the storefront texture. The
+           other five used one universal mustard, so standing beside a building
+           filled the screen with a flat beige slab. Tint them from the
+           district's own brick palette instead — reads as the same building,
+           costs nothing, and the cmat cache keeps it to one material each. */
+        // kept fairly light: these faces are usually in shadow, and on the dark
+        // districts a heavier multiplier crushed them to pure black on screen
+        const sideM = cmat(new THREE.Color(d.brickset[0]).multiplyScalar(0.82).getHex());
+        const roofM = cmat(new THREE.Color(d.brickset[0]).multiplyScalar(0.6).getHex());
+        const bld = new THREE.Mesh(BOX, [sideM, sideM, roofM, roofM, new THREE.MeshLambertMaterial({ map: pick(texes) }), sideM]);
         bld.position.set(side * (WALL_X + depth / 2), h / 2, -(dpos + w / 2));
         bld.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2;
         bld.scale.set(depth, h, w);

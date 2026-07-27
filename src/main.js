@@ -11,6 +11,7 @@ import * as GAME from './game.js';
 import { STATES } from './game.js';
 import { buildRunner, runnerMesh, poseRunner, updateTrail, makeRunner } from './runner.js';
 import * as VFX from './vfx.js';
+import { createPostFX } from './postfx.js';
 import { initMissions } from './progression.js';
 import { attachInput, onAction } from './input.js';
 import { audioInit, audioResume, musicStart, musicStop, musicLayers, sfx, sirenStart, sirenStop, sirenPass } from './audio.js';
@@ -27,6 +28,7 @@ VFX.setReducedMotion(save0.settings.reducedMotion);
 W.applyDistrict('block', true);
 
 let decorDensity = 1;                       // adaptive quality knob
+const postfx = createPostFX(W.renderer);
 const laneC = l => l * LANE_W;
 
 /* ---------------- mesh lifecycle callbacks ---------------- */
@@ -471,14 +473,22 @@ function frame(now) {
     if (visible) updateView(dt);
   }
   updateDebug(dt);
-  W.renderer.render(W.scene, W.camera);
+  {
+    const G = GAME.G, rm = document.body.classList.contains('reduced-motion');
+    const spd = G ? Math.max(0, (G.speed - 18) / (TUNE.speedMax - 18)) : 0;
+    postfx.set(GAME.getState() === STATES.RUNNING ? spd : 0, G ? (G.partyT > 0 ? 1 : 0) : 0, rm);
+    postfx.render(W.scene, W.camera);
+  }
   drawPreview(dt);
 
-  /* adaptive quality: sustained slow frames step DPR + decor down */
+  /* adaptive quality: sustained slow frames shed the expensive extras first —
+     shadows, then the post pass, then DPR + decor (bible §15 order) */
   adaptT += dt;
   if (adaptT > 3) {
     adaptT = 0;
-    if (frameAvg > 24 && dprStep < 3) {
+    if (frameAvg > 24 && W.shadowsEnabled()) { W.setShadowsEnabled(false); }
+    else if (frameAvg > 24 && postfx.isEnabled()) { postfx.setEnabled(false); }
+    else if (frameAvg > 24 && dprStep < 3) {
       dprStep++;
       const dprs = [Math.min(devicePixelRatio, 2), 1.5, 1.25, 1];
       W.renderer.setPixelRatio(dprs[dprStep]);
@@ -522,4 +532,6 @@ window.__hr = {
   G: () => GAME.G,
   save: () => loadSave(), commitSave, resetSave,
   gl: () => ({ scene: W.scene, camera: W.camera, renderer: W.renderer, THREE }),
+  postfx: () => postfx,
+  createPostFX,
 };

@@ -61,7 +61,11 @@ export function makeRunner(equipped) {
     l.add(box(0.26, 0.14, 0.4, shoes, 0, -0.72, 0.06)); body.add(l); return l; };
   parts.armL = mkArm(-1); parts.armR = mkArm(1);
   parts.legL = mkLeg(-1); parts.legR = mkLeg(1);
-  mesh.add(blobShadow(1.05));
+  // the real cast shadow does the grounding now; the blob is just a soft
+  // contact darkening underneath so he never looks detached at a bad sun angle
+  const blob = blobShadow(0.85); blob.material = blob.material.clone();
+  blob.material.opacity = 0.18; mesh.add(blob);
+  mesh.traverse(o => { if (o.isMesh && o !== blob) o.castShadow = true; });
   return { group: mesh, parts };
 }
 
