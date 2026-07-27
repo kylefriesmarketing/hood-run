@@ -316,7 +316,10 @@ function updateView(dt) {
   pPos.y = baseYView;
   const mesh = runnerMesh();
   mesh.position.set(pPos.x, pPos.y + G.py, pPos.z);
-  mesh.rotation.y = playerAng;
+  // Characters are modelled facing local +z (face, lean and arm bias all assume
+  // it) but the track runs toward -z at ang 0, so every track-aligned body needs
+  // the half turn. Without it they sprint down the street backwards.
+  mesh.rotation.y = playerAng + Math.PI;
 
   /* pose */
   if (st === STATES.CRASHED) poseRunner({ mode: 'crash', dt, time: viewTime, stumble: 0 });
@@ -379,7 +382,7 @@ function updateView(dt) {
     om.userData.lx = lerpNum(om.userData.lx ?? tLX, tLX, 1 - Math.exp(-dt * 4));
     GAME.worldPos(od, Math.max(-3, Math.min(3, om.userData.lx)), 0, oPos);
     om.position.copy(oPos);
-    om.rotation.y = playerAng;
+    om.rotation.y = playerAng + Math.PI;
     const b = om.userData, ph = viewTime * 13 + i * 1.9;
     b.legL.rotation.x = Math.sin(ph) * 1.05; b.legR.rotation.x = Math.sin(ph + Math.PI) * 1.05;
     b.armL.rotation.x = Math.sin(ph + Math.PI) * 0.9 - 0.2; b.armR.rotation.x = Math.sin(ph) * 0.9 - 0.2;
@@ -401,7 +404,7 @@ function updateView(dt) {
     dogCameo.visible = true;
     GAME.worldPos(G.dist - 1.2, HALF + 1.3, 0, camPos);
     dogCameo.position.set(camPos.x, 0.24, camPos.z);
-    dogCameo.rotation.y = playerAng;
+    dogCameo.rotation.y = playerAng + Math.PI;
     const legs = dogCameo.userData.legs, ph = viewTime * 14;
     legs[0].rotation.x = Math.sin(ph) * 0.9; legs[1].rotation.x = Math.sin(ph) * 0.9;
     legs[2].rotation.x = Math.sin(ph + Math.PI) * 0.9; legs[3].rotation.x = Math.sin(ph + Math.PI) * 0.9;
