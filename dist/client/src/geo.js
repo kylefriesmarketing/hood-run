@@ -82,6 +82,7 @@ export function detailMaterial() {
     detailMat = new THREE.MeshStandardMaterial({
       vertexColors: true, roughness: 0.86, metalness: 0.04,
     });
+    detailMat.__shared = true;   // reused by every block; never disposed on prune
   }
   return detailMat;
 }

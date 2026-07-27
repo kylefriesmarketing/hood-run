@@ -491,7 +491,8 @@ function frame(now) {
   adaptT += dt;
   if (adaptT > 3) {
     adaptT = 0;
-    if (frameAvg > 24 && W.shadowsEnabled()) { W.setShadowsEnabled(false); }
+    if (frameAvg > 24 && postfx.hasBloom()) { postfx.setBloom(false); }
+    else if (frameAvg > 24 && W.shadowsEnabled()) { W.setShadowsEnabled(false); }
     else if (frameAvg > 24 && postfx.isEnabled()) { postfx.setEnabled(false); }
     else if (frameAvg > 24 && dprStep < 3) {
       dprStep++;

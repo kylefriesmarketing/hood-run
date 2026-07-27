@@ -5,6 +5,7 @@
 import * as THREE from '../lib/three.module.js';
 import { LANE_W, ROAD_W, HALF, SIDE_W, WALL_X, DISTRICTS, ROOF_H } from './data.js';
 import { makeBuilder, detailMaterial } from './geo.js';
+import { buildHumanoid } from './character.js';
 
 export let scene, camera, renderer;
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -209,7 +210,7 @@ function roadTex(color) {
     const x1 = Math.round(w * (-1.1 / ROAD_W + 0.5)), x2 = Math.round(w * (1.1 / ROAD_W + 0.5));
     g.fillRect(x1 - 2, 20, 4, 92); g.fillRect(x2 - 2, 20, 4, 92);
   }, { repeat: true });
-  return texCache[key];
+  return markShared(texCache[key]);
 }
 function interTex(color) {
   const key = 'inter' + color;
@@ -219,7 +220,7 @@ function interTex(color) {
     g.fillStyle = '#e2e2e6';
     for (let i = 0; i < 8; i++) { const p = 18 + i * 28; g.fillRect(p, 4, 16, 34); g.fillRect(p, h - 38, 16, 34); g.fillRect(4, p, 34, 16); g.fillRect(w - 38, p, 34, 16); }
   });
-  return texCache[key];
+  return markShared(texCache[key]);
 }
 function sideTex(color, chalk) {
   const key = 'side' + color + (chalk ? 'c' : '');
@@ -228,7 +229,7 @@ function sideTex(color, chalk) {
     noise(g, w, h, 380, 0.1, false); noise(g, w, h, 140, 0.07, true);
     g.strokeStyle = 'rgba(0,0,0,.22)'; g.lineWidth = 3; g.strokeRect(0, 0, w, h / 2); g.strokeRect(0, h / 2, w, h / 2);
   }, { repeat: true });
-  return texCache[key];
+  return markShared(texCache[key]);
 }
 
 const buildingTexCache = {};
@@ -237,6 +238,7 @@ export function buildingTexes(dname) {
   const d = DISTRICTS[dname];
   const arr = [];
   for (let i = 0; i < 8; i++) arr.push(makeBuildingTex(d));
+  arr.forEach(markShared);
   buildingTexCache[dname] = arr;
   return arr;
 }
@@ -315,7 +317,7 @@ function muralTex() {
     // frame
     g.strokeStyle = 'rgba(255,255,255,.7)'; g.lineWidth = 5; g.strokeRect(4, 4, w - 8, h - 8);
   });
-  return texCache[key];
+  return markShared(texCache[key]);
 }
 
 function posterTex() {
@@ -327,7 +329,7 @@ function posterTex() {
     lines.forEach((l, i) => g.fillText(l, w / 2, 34 + i * 24));
     g.strokeStyle = '#241c18'; g.lineWidth = 4; g.strokeRect(3, 3, w - 6, h - 6);
   });
-  return texCache[key];
+  return markShared(texCache[key]);
 }
 
 function chalkTex() {
@@ -340,7 +342,7 @@ function chalkTex() {
       else g.strokeRect(w / 2 - 17, y - 24, 34, 24);
       y -= 26; }
   });
-  return texCache.chalk;
+  return markShared(texCache.chalk);
 }
 
 function arrowTexD(dir, color) { // 'L'|'R'|'T'
@@ -355,7 +357,7 @@ function arrowTexD(dir, color) { // 'L'|'R'|'T'
     else if (dir === 'R') { chev(w / 2 - 34, false); chev(w / 2 + 34, false); }
     else { chev(w / 2 - 44, true); chev(w / 2 + 44, false); }
   });
-  return texCache[key];
+  return markShared(texCache[key]);
 }
 function alleyArrowTex(kind) {
   const roof = kind === 'rooftop';
@@ -376,7 +378,7 @@ function alleyArrowTex(kind) {
       g.lineTo(w / 2 + 22, h - 52); g.closePath(); g.fill();
     }
   });
-  return texCache[key];
+  return markShared(texCache[key]);
 }
 const chainTex = () => {
   if (!texCache.chain) texCache.chain = tex(64, 64, (g, w, h) => {
@@ -384,35 +386,59 @@ const chainTex = () => {
     for (let i = -1; i < 5; i++) { g.beginPath(); g.moveTo(i * 16, 0); g.lineTo(i * 16 + 64, 64); g.stroke();
       g.beginPath(); g.moveTo(i * 16 + 64, 0); g.lineTo(i * 16, 64); g.stroke(); }
   }, { repeat: true });
-  return texCache.chain;
+  return markShared(texCache.chain);
 };
 function stripeTex(c1, c2) {
   const key = 'str' + c1 + c2;
   if (!texCache[key]) texCache[key] = tex(64, 16, (g) => {
     for (let x = 0; x < 64; x += 16) { g.fillStyle = (x / 16) % 2 ? c1 : c2; g.fillRect(x, 0, 16, 16); }
   }, { repeat: true });
-  return texCache[key];
+  return markShared(texCache[key]);
 }
 
 /* ---------------- shared geometry & materials ---------------- */
-export const BOX = new THREE.BoxGeometry(1, 1, 1);
+export const BOX = markShared(new THREE.BoxGeometry(1, 1, 1));
 const matCache = {};
 export function cmat(color, opts = {}) {
   const key = color + JSON.stringify(opts);
   // painted/plastic-ish default: mostly rough with a hint of sheen, so the
   // environment map reads on curved props without turning the city into chrome
-  if (!matCache[key]) matCache[key] = new THREE.MeshStandardMaterial({ color, roughness: 0.78, metalness: 0.06, ...opts });
+  if (!matCache[key]) matCache[key] = markShared(new THREE.MeshStandardMaterial({ color, roughness: 0.78, metalness: 0.06, ...opts }));
   return matCache[key];
 }
 export function box(w, h, d, color, x = 0, y = 0, z = 0, m) {
   const b = new THREE.Mesh(BOX, m || cmat(color)); b.scale.set(w, h, d); b.position.set(x, y, z); return b;
 }
-const shadowGeo = new THREE.CircleGeometry(0.6, 16);
-const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.3, depthWrite: false });
+const shadowGeo = markShared(new THREE.CircleGeometry(0.6, 16));
+const shadowMat = markShared(new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.3, depthWrite: false }));
 export function blobShadow(scale = 1) {
   const s = new THREE.Mesh(shadowGeo, shadowMat); s.rotation.x = -Math.PI / 2; s.position.y = 0.032; s.scale.setScalar(scale); return s;
 }
-export function disposeGroup(g) { g.traverse(o => { if (o.userData.ownGeo) o.geometry.dispose(); }); }
+/* Resources that live for the whole session and must NEVER be disposed when a
+   segment is pruned: the unit box, cached materials, cached textures. Anything
+   not marked is assumed unique to the segment that owns it. */
+export function markShared(x) { if (x) x.__shared = true; return x; }
+
+/* Free everything a pruned block owns. This used to dispose only geometries
+   carrying an explicit ownGeo flag, and never touched materials or textures at
+   all — so every per-prop geometry (tree canopies, hydrants, wheels) and every
+   per-segment texture CLONE (road, both sidewalks, alley brick) leaked. Over a
+   long run geometry counts climbed without plateauing. */
+export function disposeGroup(g) {
+  g.traverse(o => {
+    if (!o.isMesh && !o.isSprite) return;
+    if (o.geometry && !o.geometry.__shared) o.geometry.dispose();
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    for (const m of mats) {
+      if (!m || m.__shared) continue;
+      for (const slot of ['map', 'alphaMap', 'emissiveMap']) {
+        const t = m[slot];
+        if (t && !t.__shared) t.dispose();
+      }
+      m.dispose();
+    }
+  });
+}
 
 /* ---------------- prop factories ---------------- */
 function mkTree() {
@@ -549,19 +575,18 @@ function mkNeonSign() {
   const m = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 1.0), new THREE.MeshBasicMaterial({ map: t, transparent: true }));
   return m;
 }
-function mkNeighbor() { // simple sidewalk person (waving loop handled by view)
-  const g = new THREE.Group();
-  const skin = pick([0x8d5a3b, 0x6b4226, 0xc79a6b, 0xa06a44]);
-  const shirt = pick([0x3bd6c6, 0xe8604c, 0xe0a020, 0x8e44ad, 0x2a5f9e]);
-  g.add(box(0.6, 0.7, 0.36, shirt, 0, 1.0, 0));
-  g.add(box(0.38, 0.38, 0.38, skin, 0, 1.6, 0));
-  g.add(box(0.22, 0.6, 0.22, 0x2a2e36, -0.15, 0.35, 0));
-  g.add(box(0.22, 0.6, 0.22, 0x2a2e36, 0.15, 0.35, 0));
-  g.add(box(0.16, 0.55, 0.16, shirt, -0.4, 1.0, 0));
-  const wave = new THREE.Group(); wave.position.set(0.4, 1.3, 0);
-  wave.add(box(0.16, 0.55, 0.16, shirt, 0, 0.2, 0));
-  wave.userData.waveArm = true; g.add(wave);
-  g.userData.anim = wave;
+function mkNeighbor() { // sidewalk person; the waving loop is driven by the view
+  const built = buildHumanoid({
+    skin: pick([0x8d5a3b, 0x6b4226, 0xc79a6b, 0xa06a44]),
+    outfit: pick([0x3bd6c6, 0xe8604c, 0xe0a020, 0x8e44ad, 0x2a5f9e]),
+    pants: pick([0x2a2e36, 0x3a4250, 0x5a4a3a]),
+    shoes: pick([0xf0f0f0, 0x2a2e36, 0xd23c3c]),
+    build: 'civilian',
+  });
+  const g = built.group;
+  built.parts.armR.rotation.z = -0.5;         // one arm raised, ready to wave
+  g.userData.anim = built.parts.armR;
+  g.userData.parts = built.parts;
   g.add(blobShadow(0.7));
   return g;
 }
@@ -593,23 +618,14 @@ export function mkPoliceCar() {
 
 /* patrol officer — cartoon beat cop, strictly nonviolent chaser */
 export function mkOfficer() {
-  const g = new THREE.Group();
-  const skin = pick([0x8d5a3b, 0x6b4226, 0xc79a6b, 0xa06a44]);
-  const navy = 0x2a3a6e;
-  const body = new THREE.Group(); g.add(body); g.userData.body = body;
-  body.add(box(0.72, 0.78, 0.44, navy, 0, 1.08, 0));
-  body.add(box(0.44, 0.44, 0.44, skin, 0, 1.74, 0));
-  body.add(box(0.5, 0.15, 0.5, navy, 0, 1.99, 0));                       // cap
-  body.add(box(0.5, 0.06, 0.26, navy, 0, 1.93, 0.32));                   // brim
-  body.add(box(0.12, 0.12, 0.02, 0xffd23c, -0.18, 1.2, 0.23, new THREE.MeshBasicMaterial({ color: 0xffd23c }))); // badge
-  body.add(box(0.74, 0.14, 0.46, 0x1a2440, 0, 0.74, 0));                 // belt
-  const mkArm = s => { const a = new THREE.Group(); a.position.set(0.46 * s, 1.42, 0);
-    a.add(box(0.2, 0.66, 0.2, navy, 0, -0.3, 0)); a.add(box(0.16, 0.16, 0.16, skin, 0, -0.68, 0)); body.add(a); return a; };
-  const mkLeg = s => { const l = new THREE.Group(); l.position.set(0.18 * s, 0.78, 0);
-    l.add(box(0.24, 0.7, 0.26, 0x1c2440, 0, -0.34, 0));
-    l.add(box(0.26, 0.14, 0.4, 0x14141a, 0, -0.72, 0.06)); body.add(l); return l; };
-  g.userData.armL = mkArm(-1); g.userData.armR = mkArm(1);
-  g.userData.legL = mkLeg(-1); g.userData.legR = mkLeg(1);
+  const built = buildHumanoid({
+    skin: pick([0x8d5a3b, 0x6b4226, 0xc79a6b, 0xa06a44]),
+    outfit: 0x2a3a6e, pants: 0x1c2440, shoes: 0x14141a,
+    accent: 0x2a3a6e, build: 'officer',
+  });
+  const g = built.group;
+  // the chase view drives these by name, so keep the old userData contract
+  Object.assign(g.userData, built.parts);
   g.add(blobShadow(1.0));
   return g;
 }
@@ -855,7 +871,7 @@ function billTex() {
     g.fillStyle = '#3f7d4c'; g.font = 'bold 11px Georgia'; g.textAlign = 'center';
     g.fillText('$', w / 2, h / 2 + 4);
   });
-  return _billTex;
+  return markShared(_billTex);
 }
 export function mkCash() {
   const g = new THREE.Group();

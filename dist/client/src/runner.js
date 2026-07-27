@@ -5,6 +5,7 @@
 import * as THREE from '../lib/three.module.js';
 import { COSMETICS } from './data.js';
 import { scene, box, blobShadow, cmat } from './world.js';
+import { buildHumanoid } from './character.js';
 
 let mesh = null, parts = null, trailPool = [], trailKind = 'none', trailT = 0, poseKind = 'cheer';
 
@@ -20,47 +21,40 @@ export function makeRunner(equipped) {
   const hat = cosmeticById('hat', equipped.hat);
   const skin = cosmeticById('skin', equipped.skin).color;
 
-  const mesh = new THREE.Group();
-  const body = new THREE.Group(); mesh.add(body);
-  const parts = { body };
-  body.add(box(0.7, 0.75, 0.42, outfit, 0, 1.08, 0));
-  body.add(box(0.74, 0.18, 0.46, outfit, 0, 1.42, -0.02));
-  body.add(box(0.42, 0.42, 0.42, skin, 0, 1.72, 0));
+  /* articulated body from the shared humanoid; cosmetics layer on top */
+  const built = buildHumanoid({ skin, outfit, shoes, pants: 0x2a3038, build: 'runner' });
+  const mesh = built.group, parts = built.parts, body = parts.body;
+
   // the City Trust money bag, slung cross-body (cartoon sack)
-  const strap = box(0.1, 0.7, 0.46, 0x6a4a2c, 0.15, 1.15, 0); strap.rotation.z = 0.5; body.add(strap);
-  const sack = new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 8), new THREE.MeshStandardMaterial({ color: 0xd8b878 }));
-  sack.scale.set(1, 1.15, 0.8); sack.position.set(-0.34, 0.92, -0.26); body.add(sack);
-  body.add(box(0.14, 0.1, 0.14, 0xa8885c, -0.34, 1.22, -0.26));          // tied neck
-  const dollar = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 0.22), new THREE.MeshBasicMaterial({ map: dollarTex(), transparent: true }));
-  dollar.position.set(-0.34, 0.92, -0.02); body.add(dollar);
+  const strap = box(0.09, 0.66, 0.42, 0x6a4a2c, 0.13, 1.24, 0); strap.rotation.z = 0.52; body.add(strap);
+  // tucked against the small of his back rather than floating off the hip
+  const sack = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), new THREE.MeshStandardMaterial({ color: 0xd8b878, roughness: 0.9 }));
+  sack.scale.set(1, 1.1, 0.75); sack.position.set(-0.2, 1.02, -0.3); body.add(sack);
+  body.add(box(0.11, 0.08, 0.11, 0xa8885c, -0.2, 1.26, -0.3));           // tied neck
+  const dollar = new THREE.Mesh(new THREE.PlaneGeometry(0.17, 0.17), new THREE.MeshBasicMaterial({ map: dollarTex(), transparent: true, side: THREE.DoubleSide }));
+  dollar.position.set(-0.2, 1.02, -0.47); dollar.rotation.y = Math.PI; body.add(dollar);
+
+  // headwear sits on the new head (centre y 1.80, ~0.4 tall)
   if (hat.kind === 'cap') {
-    body.add(box(0.46, 0.16, 0.46, hat.color, 0, 1.94, 0));
-    body.add(box(0.46, 0.06, 0.24, hat.color, 0, 1.88, 0.3));
+    body.add(box(0.42, 0.14, 0.42, hat.color, 0, 2.03, 0));
+    body.add(box(0.42, 0.05, 0.22, hat.color, 0, 1.98, 0.27));
   } else if (hat.kind === 'beanie') {
-    body.add(box(0.46, 0.2, 0.46, hat.color, 0, 1.93, 0));
-    body.add(box(0.14, 0.14, 0.14, hat.color, 0, 2.06, 0));
+    body.add(box(0.42, 0.18, 0.42, hat.color, 0, 2.02, 0));
+    body.add(box(0.13, 0.13, 0.13, hat.color, 0, 2.14, 0));
   } else if (hat.kind === 'bucket') {
-    body.add(box(0.48, 0.18, 0.48, hat.color, 0, 1.94, 0));
-    body.add(box(0.68, 0.06, 0.68, hat.color, 0, 1.86, 0));      // all-round brim
+    body.add(box(0.44, 0.16, 0.44, hat.color, 0, 2.03, 0));
+    body.add(box(0.62, 0.05, 0.62, hat.color, 0, 1.96, 0));               // all-round brim
   } else if (hat.kind === 'visor') {
-    body.add(box(0.48, 0.1, 0.48, hat.color, 0, 1.9, 0));
-    body.add(box(0.48, 0.05, 0.26, hat.color, 0, 1.87, 0.31));
-    body.add(box(0.44, 0.14, 0.44, 0x1c1410, 0, 1.97, 0));       // hair above the visor
+    body.add(box(0.44, 0.09, 0.44, hat.color, 0, 1.99, 0));
+    body.add(box(0.44, 0.05, 0.24, hat.color, 0, 1.96, 0.28));
+    body.add(box(0.4, 0.12, 0.4, 0x1c1410, 0, 2.05, 0));                  // hair above the visor
   } else if (hat.kind === 'phones') {
-    body.add(box(0.44, 0.14, 0.44, 0x1c1410, 0, 1.95, 0));       // hair
-    body.add(box(0.5, 0.07, 0.16, hat.color, 0, 2.03, 0));       // headband
-    for (const s of [-1, 1]) body.add(box(0.1, 0.22, 0.24, hat.color, s * 0.25, 1.82, 0));
+    body.add(box(0.4, 0.12, 0.4, 0x1c1410, 0, 2.03, 0));                  // hair
+    body.add(box(0.46, 0.06, 0.15, hat.color, 0, 2.11, 0));               // headband
+    for (const s of [-1, 1]) body.add(box(0.09, 0.2, 0.22, hat.color, s * 0.23, 1.9, 0));
   } else {
-    body.add(box(0.44, 0.14, 0.44, 0x1c1410, 0, 1.95, 0)); // hair
+    body.add(box(0.4, 0.12, 0.4, 0x1c1410, 0, 2.03, 0));                  // hair
   }
-  body.add(box(0.5, 0.28, 0.2, outfit, 0, 0.78, 0));
-  const mkArm = s => { const a = new THREE.Group(); a.position.set(0.44 * s, 1.4, 0);
-    a.add(box(0.2, 0.66, 0.2, outfit, 0, -0.3, 0)); a.add(box(0.16, 0.16, 0.16, skin, 0, -0.68, 0)); body.add(a); return a; };
-  const mkLeg = s => { const l = new THREE.Group(); l.position.set(0.18 * s, 0.78, 0);
-    l.add(box(0.24, 0.7, 0.26, 0x2a3038, 0, -0.34, 0));
-    l.add(box(0.26, 0.14, 0.4, shoes, 0, -0.72, 0.06)); body.add(l); return l; };
-  parts.armL = mkArm(-1); parts.armR = mkArm(1);
-  parts.legL = mkLeg(-1); parts.legR = mkLeg(1);
   // the real cast shadow does the grounding now; the blob is just a soft
   // contact darkening underneath so he never looks detached at a bad sun angle
   const blob = blobShadow(0.85); blob.material = blob.material.clone();
