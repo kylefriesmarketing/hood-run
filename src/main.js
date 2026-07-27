@@ -10,6 +10,7 @@ import * as W from './world.js';
 import * as GAME from './game.js';
 import { STATES } from './game.js';
 import { buildRunner, runnerMesh, poseRunner, updateTrail, makeRunner } from './runner.js';
+import * as RIG from './rig.js';
 import * as VFX from './vfx.js';
 import { createPostFX } from './postfx.js';
 import { initMissions } from './progression.js';
@@ -214,6 +215,8 @@ export function refreshPreview() {
   built.group.position.y = -1.15;               // centre the body in frame
   preview.rig.add(built.group);
   preview.parts = built.parts;
+  preview.charRig = built.rig;                  // skinned path: closet drives the mixer
+  if (built.rig) { RIG.play(built.rig, 'Walk'); }
 }
 function drawPreview(dt) {
   if (!preview.renderer || !document.getElementById('runner').classList.contains('show')) return;
@@ -228,6 +231,7 @@ function drawPreview(dt) {
   preview.camera.lookAt(0, 0.05, 0);
   // slow turntable + a gentle jog so shoes, trail colours and hats all read
   preview.rig.rotation.y += dt * 0.55;
+  if (preview.charRig) preview.charRig.mixer.update(dt);
   const p = preview.parts;
   if (p) {
     preview.phase += dt * 6.5;
@@ -292,6 +296,41 @@ function updateDebug(dt) {
 }
 const officers = [W.mkOfficer(), W.mkOfficer(), W.mkOfficer()];
 for (const o of officers) { W.scene.add(o); o.visible = false; }
+
+/* Once the skinned character lands, the capsule officers are replaced by
+   rigged ones — navy uniform, duty cap, real run cycle. The array slots are
+   swapped in place so the chase loop below never notices. */
+function mkRiggedOfficer(i) {
+  const r = RIG.createRigged({ skin: [0x9a6a4a, 0x7a4a2f, 0xb98a63][i % 3], top: 0x1a2440, pants: 0x161c2c, shoes: 0x22252c });
+  const capG = new THREE.Group();
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.5),
+    new THREE.MeshStandardMaterial({ color: 0x2a3a6e, roughness: 0.8 }));
+  dome.scale.set(0.145, 0.085, 0.155); dome.position.y = 0.03; capG.add(dome);
+  const peak = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.025, 0.13),
+    new THREE.MeshStandardMaterial({ color: 0x1c2947, roughness: 0.7 }));
+  peak.position.set(0, 0.015, 0.15); capG.add(peak);
+  const badge = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.012),
+    new THREE.MeshStandardMaterial({ color: 0xffd23c, roughness: 0.3, metalness: 0.4 }));
+  badge.position.set(0, 0.02, 0.145); capG.add(badge);
+  RIG.attachToBone(r, 'Head', capG, new THREE.Vector3(0, 0.24, 0));
+  const g = r.group;
+  g.add(W.blobShadow(0.8));
+  g.userData.rig = r;
+  RIG.play(r, 'Run');
+  r.actions.Run.time = i * 0.37;         // desync the strides or they march in lockstep
+  return g;
+}
+RIG.loadRig().then(ok => {
+  if (!ok) return;
+  for (let i = 0; i < officers.length; i++) {
+    const old = officers[i];
+    W.scene.remove(old);
+    const nu = mkRiggedOfficer(i);
+    nu.visible = false;
+    W.scene.add(nu);
+    officers[i] = nu;
+  }
+});
 
 function updateView(dt) {
   const G = GAME.G, st = GAME.getState();
@@ -383,11 +422,20 @@ function updateView(dt) {
     GAME.worldPos(od, Math.max(-3, Math.min(3, om.userData.lx)), 0, oPos);
     om.position.copy(oPos);
     om.rotation.y = playerAng + Math.PI;
-    const b = om.userData, ph = viewTime * 13 + i * 1.9;
-    b.legL.rotation.x = Math.sin(ph) * 1.05; b.legR.rotation.x = Math.sin(ph + Math.PI) * 1.05;
-    b.armL.rotation.x = Math.sin(ph + Math.PI) * 0.9 - 0.2; b.armR.rotation.x = Math.sin(ph) * 0.9 - 0.2;
-    b.body.position.y = Math.abs(Math.sin(ph)) * 0.06;
-    if (st === STATES.CRASHED && G.dieT > 0.5) b.body.rotation.x = 0.35; else b.body.rotation.x = 0.16;
+    if (om.userData.rig) {
+      const r = om.userData.rig;
+      // the arrest: when Jay is down and they've closed in, the lead officer
+      // throws the cuff-grab (Punch reads perfectly at chase distance)
+      if (st === STATES.CRASHED && G.dieT > 0.5) RIG.play(r, i === 0 ? 'Punch' : 'Idle');
+      else RIG.play(r, 'Run', { timeScale: 1.05 + i * 0.06 });
+      r.mixer.update(dt);
+    } else {
+      const b = om.userData, ph = viewTime * 13 + i * 1.9;
+      b.legL.rotation.x = Math.sin(ph) * 1.05; b.legR.rotation.x = Math.sin(ph + Math.PI) * 1.05;
+      b.armL.rotation.x = Math.sin(ph + Math.PI) * 0.9 - 0.2; b.armR.rotation.x = Math.sin(ph) * 0.9 - 0.2;
+      b.body.position.y = Math.abs(Math.sin(ph)) * 0.06;
+      if (st === STATES.CRASHED && G.dieT > 0.5) b.body.rotation.x = 0.35; else b.body.rotation.x = 0.16;
+    }
   }
   if (st === STATES.RUNNING) {
     whistleT -= dt;

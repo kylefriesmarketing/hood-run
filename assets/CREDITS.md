@@ -26,6 +26,18 @@ Downloaded as 1K JPG sets, then locally:
 
 Raw sets totalled ~27 MB; the shipped set is ~613 KB.
 
+## Character rig — `assets/rig/human.glb`
+
+Source: **"Animated Human" by Quaternius** (via poly.pizza,
+https://poly.pizza/m/c3Ibh9I3udk)
+Licence: **CC0 1.0 Universal**
+
+41-joint Mixamo-named skeleton with authored Idle / Walk / Run / Jump /
+Punch / Death clips. Shipped unmodified; the game paints outfits at runtime
+as per-triangle vertex colours (the file's own UVs overlap and carry no
+texture), and normalises the FBX-derived armature scale (~69x) by measuring
+the skeleton's world extent at load.
+
 ## Library code — `lib/`
 
 - `three.module.js` — three.js r160, MIT
