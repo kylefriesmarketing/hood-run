@@ -351,17 +351,46 @@ function makeBumpTarget(w, h) {
 function makeBuildingTex(d) {
   const brick = pick(d.brickset), store = Math.random() < (d.decor.glass ? 0.3 : 0.55);
   const glass = d.decor.glass && Math.random() < 0.55;
+
+  /* Every random decision is rolled HERE, once, into a layout the draw call
+     merely reads. Two consumers depend on that: the repaint pass (the brick
+     photo lands after first paint, and rolling inside draw() would teleport
+     every window on repaint) and addFacadeRelief, which builds real sills,
+     awnings and AC boxes that must land exactly where the paint says. */
+  const layout = { glass, store, brick };
+  if (glass) {
+    layout.panes = [];
+    for (let y = 8; y < 384 - 60; y += 34) for (let x = 10; x < 256 - 20; x += 30)
+      layout.panes.push({ x, y, lit: Math.random() < d.windowLit, cool: Math.random() < 0.5 });
+  } else {
+    const cols = irand(3, 4), gY = 384 - 86;
+    layout.cols = cols; layout.gY = gY; layout.windows = [];
+    for (let f = 0; f < 4; f++) {
+      const wy = 26 + f * ((gY - 40) / 4);
+      for (let c = 0; c < cols; c++) {
+        const wx = 24 + c * ((256 - 48) / (cols - 1 || 1)) - 14;
+        layout.windows.push({ x: wx, y: wy, lit: Math.random() < d.windowLit,
+          plant: Math.random() < 0.25, ac: Math.random() < 0.15 });
+      }
+    }
+    if (store) {
+      layout.storeCol = pick(['#c0392b', '#1f8a4c', '#c07820', '#28648f', '#8e44ad', '#c94f7c']);
+      layout.sign = pick(d.signs);
+      layout.blade = Math.random() < 0.55;
+      layout.bladeU = pick([0.16, 0.84]);
+    }
+  }
+
   // half the colour map's resolution: relief is low-frequency, and at full size
   // this doubled the per-district facade texture budget for no visible gain
   const bump = makeBumpTarget(128, 192);
   const t = tex(256, 384, (g, w, h) => {
     if (glass) { // downtown glass tower face
       g.fillStyle = brick; g.fillRect(0, 0, w, h);
-      for (let y = 8; y < h - 60; y += 34) for (let x = 10; x < w - 20; x += 30) {
-        const lit = Math.random() < d.windowLit;
-        g.fillStyle = lit ? '#ffe9b0' : (Math.random() < 0.5 ? '#a8c4de' : '#8fb0d0');
-        g.fillRect(x, y, 24, 28);
-        g.fillStyle = 'rgba(255,255,255,.25)'; g.fillRect(x, y, 24, 6);
+      for (const p of layout.panes) {
+        g.fillStyle = p.lit ? '#ffe9b0' : (p.cool ? '#a8c4de' : '#8fb0d0');
+        g.fillRect(p.x, p.y, 24, 28);
+        g.fillStyle = 'rgba(255,255,255,.25)'; g.fillRect(p.x, p.y, 24, 6);
       }
       g.fillStyle = '#2c3038'; g.fillRect(0, h - 58, w, 58);
       g.fillStyle = '#cfe3f0'; g.fillRect(14, h - 50, w - 28, 40);
@@ -378,28 +407,24 @@ function makeBuildingTex(d) {
       for (let y = 0; y < h; y += 10) for (let x = (y / 10) % 2 * 12; x < w; x += 24) { g.beginPath(); g.moveTo(x, y); g.lineTo(x, y + 10); g.stroke(); }
     }
     noise(g, w, h, photo ? 120 : 420, photo ? 0.05 : 0.09, false);
-    const cols = irand(3, 4), gY = h - 86;
-    for (let f = 0; f < 4; f++) {
-      const wy = 26 + f * ((gY - 40) / 4);
-      for (let c = 0; c < cols; c++) {
-        const wx = 24 + c * ((w - 48) / (cols - 1 || 1)) - 14;
-        const lit = Math.random() < d.windowLit;
-        g.fillStyle = lit ? '#ffe9b0' : '#cfe0ee';
-        g.fillRect(wx, wy, 28, 40);
-        g.fillStyle = 'rgba(255,255,255,.35)'; g.fillRect(wx, wy, 28, 10);
-        g.strokeStyle = '#3a3026'; g.lineWidth = 3; g.strokeRect(wx, wy, 28, 40);
-        if (Math.random() < 0.25) { g.fillStyle = '#3f7a3a'; g.fillRect(wx + 2, wy + 34, 24, 8); // window plants
-          g.fillStyle = '#5aa050'; for (let p = 0; p < 4; p++) g.fillRect(wx + 3 + p * 6, wy + 28, 3, 7); }
-        if (Math.random() < 0.15) { g.fillStyle = '#8b8f99'; g.fillRect(wx + 4, wy + 30, 20, 12); }
-      }
+    for (const wn of layout.windows) {
+      const wx = wn.x, wy = wn.y;
+      g.fillStyle = wn.lit ? '#ffe9b0' : '#cfe0ee';
+      g.fillRect(wx, wy, 28, 40);
+      g.fillStyle = 'rgba(255,255,255,.35)'; g.fillRect(wx, wy, 28, 10);
+      g.strokeStyle = '#3a3026'; g.lineWidth = 3; g.strokeRect(wx, wy, 28, 40);
+      if (wn.plant) { g.fillStyle = '#3f7a3a'; g.fillRect(wx + 2, wy + 34, 24, 8); // window plants
+        g.fillStyle = '#5aa050'; for (let p = 0; p < 4; p++) g.fillRect(wx + 3 + p * 6, wy + 28, 3, 7); }
+      if (wn.ac) { g.fillStyle = '#8b8f99'; g.fillRect(wx + 4, wy + 30, 20, 12); }
     }
+    const gY = layout.gY;
     if (store) {
-      const col = pick(['#c0392b', '#1f8a4c', '#c07820', '#28648f', '#8e44ad', '#c94f7c']);
+      const col = layout.storeCol;
       g.fillStyle = '#241c18'; g.fillRect(8, gY, w - 16, h - gY - 6);
       g.fillStyle = '#ffedb8'; g.fillRect(20, gY + 26, w - 40, 44);
       g.fillStyle = 'rgba(0,0,0,.3)'; for (let x = 20; x < w - 40; x += 16) g.fillRect(x, gY + 26, 4, 44);
       g.fillStyle = col; g.fillRect(8, gY, w - 16, 22);
-      g.fillStyle = '#fff'; g.font = 'bold 17px Arial'; g.textAlign = 'center'; g.fillText(pick(d.signs), w / 2, gY + 17);
+      g.fillStyle = '#fff'; g.font = 'bold 17px Arial'; g.textAlign = 'center'; g.fillText(layout.sign, w / 2, gY + 17);
       for (let x = 8; x < w - 8; x += 20) { g.fillStyle = (x / 20) % 2 < 1 ? col : '#f4ead8'; g.fillRect(x, gY - 8, 20, 10); }
     } else {
       g.fillStyle = '#2a2018'; g.fillRect(w / 2 - 22, h - 70, 44, 64);
@@ -408,6 +433,7 @@ function makeBuildingTex(d) {
     }
   }, { base: 'brick', onPaint: c => bump.refresh(c) });
   t.userData.bump = bump.texture;
+  t.userData.layout = layout;
   markShared(bump.texture);        // lives as long as its colour map does
   return t;
 }
@@ -1171,7 +1197,7 @@ export function buildSegment(seg, opts) {
 /* Architectural detail for one building, accumulated into a shared builder so a
    whole block's cornices, ledges, parapets and roof clutter cost ONE draw call.
    Local axes here are segment space: x is across the street, z is along it. */
-function addBuildingDetail(B, side, dpos, w, h, depth, d) {
+function addBuildingDetail(B, side, dpos, w, h, depth, d, layout) {
   const cx = side * (WALL_X + depth / 2);
   const cz = -(dpos + w / 2);
   const brick = new THREE.Color(d.brickset[0]);
@@ -1182,10 +1208,23 @@ function addBuildingDetail(B, side, dpos, w, h, depth, d) {
   const deck = brick.clone().multiplyScalar(0.5).getHex();
   const metal = 0x9aa2ab, dark = 0x44484f, wood = 0x8a6a44;
 
-  B.box(w + 0.5, 1.0, depth + 0.4, cx, 0.5, cz, trimDark);            // plinth
-  for (let y = 4.4; y < h - 2.4; y += 4.6)                             // string courses
-    B.box(w + 0.22, 0.2, depth + 0.18, cx, y, cz, trim);
-  B.box(w + 0.75, 0.6, depth + 0.65, cx, h - 0.3, cz, trim);           // cornice
+  /* After the building's ±π/2 yaw the FRONTAGE (w) runs along world z and the
+     depth along world x. The wraps below had them swapped, so any frontage
+     wider than the 10-unit depth pushed its plinth/cornice up to 2.5 units
+     into the street; narrower ones fell short of their own corners. */
+  B.box(depth + 0.4, 1.0, w + 0.5, cx, 0.5, cz, trimDark);            // plinth
+  if (layout && layout.windows) {
+    // courses in the real gaps between painted window rows, not a blind 4.6
+    // step that sliced straight through the glass
+    for (let f = 0; f < 3; f++) {
+      const y = h * (1 - (78.25 + 64.5 * f) / 384);
+      if (y > 2.2 && y < h - 2.4) B.box(depth + 0.18, 0.2, w + 0.22, cx, y, cz, trim);
+    }
+  } else if (!layout || !layout.glass) {
+    for (let y = 4.4; y < h - 2.4; y += 4.6)                           // string courses
+      B.box(depth + 0.18, 0.2, w + 0.22, cx, y, cz, trim);
+  }
+  B.box(depth + 0.65, 0.6, w + 0.75, cx, h - 0.3, cz, trim);           // cornice
 
   // parapet as four thin walls, so roof clutter still reads behind it
   const pt = 0.32, py = h + 0.55;
@@ -1218,6 +1257,80 @@ function addBuildingDetail(B, side, dpos, w, h, depth, d) {
     B.box(0.12, 3.4, 0.12, ax, h + 1.8, az, dark);
     B.box(1.1, 0.08, 0.08, ax, h + 3.1, az, dark);
     B.box(0.08, 0.08, 0.9, ax, h + 2.8, az, dark);
+  }
+}
+
+/* Real geometry matched to the painted facade: a sill and lintel on every
+   window, AC boxes and planters exactly where the paint put them, an awning
+   and blade sign on storefronts, a door surround on walk-ups, mullion fins on
+   glass towers. All of it lands in the block's ONE merged detail mesh, so a
+   street of relief costs no extra draw calls.
+
+   Mapping contract (change makeBuildingTex and this together or not at all):
+   the facade canvas is 256x384 with flipY, so canvas y_c sits at world
+   y = h*(1 - y_c/384); canvas u runs along the frontage in the direction of
+   the face's local +x after the ±π/2 yaw, which is what zOf() encodes. */
+function addFacadeRelief(B, layout, side, dpos, w, h) {
+  if (!layout) return;
+  const TH = 384, TW = 256;
+  const yOf = yc => h * (1 - yc / TH);
+  const zOf = u => side > 0 ? -(dpos + w * (1 - u)) : -(dpos + u * w);
+  const xAt = (p, t) => side * (WALL_X - p + t / 2);   // protrude p from the face, box thickness t
+  const zw = cw => cw / TW * w;                        // canvas width -> world width
+
+  const brickC = new THREE.Color(layout.brick);
+  const trim = brickC.clone().lerp(new THREE.Color(0xffffff), 0.32).getHex();
+  const dark = brickC.clone().multiplyScalar(0.55).getHex();
+  const metal = 0x9aa2ab, metalDark = 0x565b63;
+
+  if (layout.glass) {
+    // mullion fins in the pane gaps + a band per storey — the two cues that
+    // turn a painted curtain wall into a curtain wall
+    const finBot = yOf(TH - 58), finTop = h - 0.35;
+    for (let x = 40; x < TW - 20; x += 30)
+      B.box(0.34, finTop - finBot, 0.15, xAt(0.16, 0.34), (finBot + finTop) / 2, zOf((x - 3) / TW), dark);
+    for (let k = 1; k < 10; k++) {
+      const yc = 8 + k * 34 - 3;
+      if (yc > TH - 66) break;
+      B.box(0.26, 0.14, zw(TW - 14), xAt(0.12, 0.26), yOf(yc), zOf(0.5), dark);
+    }
+    B.box(1.1, 0.12, zw(TW - 60), xAt(1.0, 1.1), yOf(TH - 56), zOf(0.5), metalDark);  // lobby canopy
+    return;
+  }
+
+  for (const wn of layout.windows) {
+    const zC = zOf((wn.x + 14) / TW);
+    B.box(0.3, 0.13, zw(36), xAt(0.17, 0.3), yOf(wn.y + 40) - 0.02, zC, trim);   // sill
+    B.box(0.24, 0.11, zw(32), xAt(0.11, 0.24), yOf(wn.y) + 0.04, zC, trim);      // lintel
+    if (wn.ac) {                                                  // window AC unit
+      const acY = yOf(wn.y + 36);
+      B.box(0.62, 0.34, zw(20), xAt(0.5, 0.62), acY, zC, metal);
+      B.box(0.5, 0.06, zw(21), xAt(0.52, 0.5), acY + 0.2, zC, metalDark);
+    }
+    if (wn.plant)                                                 // planter box
+      B.box(0.3, 0.16, zw(24), xAt(0.24, 0.3), yOf(wn.y + 38), zC, 0x3f7a3a);
+  }
+
+  if (layout.store) {
+    const col = new THREE.Color(layout.storeCol).getHex();
+    const ay = yOf(layout.gY - 2);
+    // awning: slab tilted about the along-street axis so the outer edge drops
+    B.box(1.15, 0.09, zw(TW - 20), xAt(1.0, 1.15), ay + 0.16, zOf(0.5), col, { rz: side * 0.3 });
+    B.box(0.1, 0.22, zw(TW - 24), xAt(0.98, 0.1), ay - 0.1, zOf(0.5), col);      // hanging valance
+    if (layout.blade) {                                           // perpendicular blade sign
+      const bz = zOf(layout.bladeU), by = ay + 1.15;
+      B.box(1.05, 0.62, 0.12, xAt(1.1, 1.05), by, bz, col);
+      B.box(0.85, 0.42, 0.16, xAt(1.08, 0.85), by, bz, 0xf4ead8);
+      B.box(0.9, 0.07, 0.07, xAt(1.15, 0.9), by + 0.38, bz, 0x2a2e34);           // bracket
+    }
+  } else {
+    // door surround + steps where the paint puts the doorway
+    const zC = zOf(0.5), doorTop = yOf(TH - 70);
+    B.box(0.22, doorTop + 0.1, zw(6), xAt(0.12, 0.22), (doorTop + 0.1) / 2, zOf((TW / 2 - 25) / TW), trim);
+    B.box(0.22, doorTop + 0.1, zw(6), xAt(0.12, 0.22), (doorTop + 0.1) / 2, zOf((TW / 2 + 25) / TW), trim);
+    B.box(0.26, 0.16, zw(56), xAt(0.14, 0.26), doorTop + 0.12, zC, trim);        // header
+    B.box(0.55, 0.11, zw(50), xAt(0.5, 0.55), 0.055, zC, 0x8a8a90);              // step
+    B.box(0.35, 0.11, zw(46), xAt(0.32, 0.35), 0.165, zC, 0x9a9aa0);             // upper step
   }
 }
 
@@ -1285,7 +1398,8 @@ function buildStreetDressing(g, seg, d, opts, dd) {
            w (9..15), which left ragged gaps between neighbours. */
         bld.scale.set(w, h, depth);
         g.add(bld);
-        addBuildingDetail(B, side, dpos, w, h, depth, d);
+        addBuildingDetail(B, side, dpos, w, h, depth, d, faceTex.userData.layout);
+        addFacadeRelief(B, faceTex.userData.layout, side, dpos, w, h);
         if (Math.random() < 0.25 * dd && !d.decor?.glass) { const fe = mkFireEscape(); fe.position.set(side * (WALL_X - 0.5), 0, -(dpos + w / 2)); fe.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2; g.add(fe); }
         if (d.decor?.stoops && Math.random() < 0.35 * dd) { const st = mkStoop(); st.position.set(side * (WALL_X - 0.9), 0.24, -(dpos + w / 2)); st.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2; g.add(st); }
         if (d.decor?.neon && Math.random() < 0.6 * dd) {          // glowing shopfront neon
