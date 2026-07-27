@@ -549,6 +549,12 @@
   </div>
 </div>
 
+<!-- Lets the vendored three.js addons in lib/loaders and lib/utils resolve their
+     bare "three" import against our core build, so those files stay byte-identical
+     to upstream and can be swapped for a newer revision without hand edits. -->
+<script type="importmap">
+{ "imports": { "three": "./lib/three.module.js" } }
+</script>
 <script type="module" src="./src/main.js"></script>
 <script>
   if ('serviceWorker' in navigator) {

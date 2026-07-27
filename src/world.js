@@ -6,6 +6,7 @@ import * as THREE from '../lib/three.module.js';
 import { LANE_W, ROAD_W, HALF, SIDE_W, WALL_X, DISTRICTS, ROOF_H } from './data.js';
 import { makeBuilder, detailMaterial } from './geo.js';
 import { buildHumanoid } from './character.js';
+import { initPBR, onPBRReady, baseImage, pbrProfile } from './pbr.js';
 
 export let scene, camera, renderer;
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -25,6 +26,7 @@ function refreshEnv() {
 }
 export function initWorld(canvas) {
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  initPBR(renderer);                    // photo material maps stream in behind the first frames
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.setSize(innerWidth, innerHeight);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -184,13 +186,81 @@ export function updateLights(dt) {
 }
 
 /* ---------------- texture factory ---------------- */
+/* Textures that composite a photo under their painted detail register here, so
+   any that were painted before the image finished decoding can repaint once it
+   lands. Without this the first few segments of a cold load would keep their
+   flat-colour base forever while later ones came out photographic. */
+const repaintQueue = [];
+let pbrHooked = false;
+
 export function tex(w, h, draw, opts = {}) {
   const c = document.createElement('canvas'); c.width = w; c.height = h;
-  draw(c.getContext('2d'), w, h);
+  const ctx = c.getContext('2d');
+  draw(ctx, w, h);
+  if (opts.onPaint) opts.onPaint(c);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
   if (opts.repeat) t.wrapS = t.wrapT = THREE.RepeatWrapping;
+
+  if (opts.base) {
+    repaintQueue.push(() => {
+      ctx.clearRect(0, 0, w, h); draw(ctx, w, h);
+      if (opts.onPaint) opts.onPaint(c);      // keep derived maps in step with the repaint
+      t.needsUpdate = true;
+    });
+    if (!pbrHooked) {
+      pbrHooked = true;
+      onPBRReady(() => { for (const fn of repaintQueue) fn(); repaintQueue.length = 0; });
+    }
+  }
   return t;
+}
+
+/* Lay a photographic base coat, tinted to the district's colour, and fall back
+   to the flat fill until the image is decoded. Multiply keeps the photo's grain
+   and mortar shadows while the district still drives the hue, so a red-brick
+   block and a sandstone block share one image without looking like the same
+   wall painted twice. */
+const patCache = {};
+/* the photo pre-scaled to one tile, so a facade gets brick at brick size rather
+   than one brick stretched across three storeys */
+function tilePattern(g, img, setName, tw, th) {
+  const key = `${setName}|${tw}x${th}`;
+  if (!patCache[key]) {
+    const oc = document.createElement('canvas'); oc.width = tw; oc.height = th;
+    oc.getContext('2d').drawImage(img, 0, 0, tw, th);
+    patCache[key] = oc;
+  }
+  return g.createPattern(patCache[key], 'repeat');
+}
+
+/* Lay a photographic base coat under the painted detail.
+   `tiles` is how many times the photo repeats across the canvas — get this
+   wrong and a 20 cm brick renders two metres tall, which reads as camouflage
+   rather than masonry.
+   Blend defaults to OVERLAY, not multiply: overlay contributes the photo's
+   light-and-shade (mortar lines, chips, grain) while leaving the district's
+   own colour driving the hue. Multiply looked right on the pale paving stone
+   and turned every brick block into dark blotches, because the district
+   colours are already dark and multiplying two dark values compounds. */
+function paintBase(g, w, h, color, setName, opts = {}) {
+  const hex = typeof color === 'number' ? '#' + color.toString(16).padStart(6, '0') : color;
+  g.fillStyle = hex; g.fillRect(0, 0, w, h);
+
+  const img = baseImage(setName);
+  if (!img) return false;
+
+  const [tx, ty] = opts.tiles || [1, 1];
+  g.save();
+  g.globalCompositeOperation = opts.mode || 'overlay';
+  g.globalAlpha = opts.alpha ?? 0.8;
+  if (tx === 1 && ty === 1) g.drawImage(img, 0, 0, w, h);
+  else {
+    g.fillStyle = tilePattern(g, img, setName, Math.max(8, Math.round(w / tx)), Math.max(8, Math.round(h / ty)));
+    g.fillRect(0, 0, w, h);
+  }
+  g.restore();
+  return true;
 }
 function noise(g, w, h, n, alpha, light) {
   for (let i = 0; i < n; i++) {
@@ -202,14 +272,20 @@ function noise(g, w, h, n, alpha, light) {
 const texCache = {};
 function roadTex(color) {
   const key = 'road' + color;
-  if (!texCache[key]) texCache[key] = tex(128, 256, (g, w, h) => {
-    g.fillStyle = '#' + color.toString(16).padStart(6, '0'); g.fillRect(0, 0, w, h);
-    noise(g, w, h, 650, 0.13, false); noise(g, w, h, 220, 0.06, true);
-    g.fillStyle = '#c8a23c'; g.fillRect(2, 0, 3, h); g.fillRect(w - 5, 0, 3, h);
+  if (!texCache[key]) texCache[key] = tex(256, 512, (g, w, h) => {
+    // gentle: the road is the darkest surface on screen and the district's own
+    // near-black is doing the work — the photo is here for grain, not colour
+    const photo = paintBase(g, w, h, color, 'asphalt', { tiles: [2, 4], alpha: 0.5 });
+    // the hand-drawn grain is what SOLD asphalt before; with a real photo under
+    // it, keep only a whisper or the surface turns to static
+    noise(g, w, h, photo ? 180 : 650, photo ? 0.06 : 0.13, false);
+    noise(g, w, h, photo ? 70 : 220, 0.06, true);
+    const s = w / 128;                       // markings were authored at 128px wide
+    g.fillStyle = '#c8a23c'; g.fillRect(2 * s, 0, 3 * s, h); g.fillRect(w - 5 * s, 0, 3 * s, h);
     g.fillStyle = '#d8d8dc';
     const x1 = Math.round(w * (-1.1 / ROAD_W + 0.5)), x2 = Math.round(w * (1.1 / ROAD_W + 0.5));
-    g.fillRect(x1 - 2, 20, 4, 92); g.fillRect(x2 - 2, 20, 4, 92);
-  }, { repeat: true });
+    g.fillRect(x1 - 2 * s, 40 * s, 4 * s, 184 * s); g.fillRect(x2 - 2 * s, 40 * s, 4 * s, 184 * s);
+  }, { repeat: true, base: 'asphalt' });
   return markShared(texCache[key]);
 }
 function interTex(color) {
@@ -224,11 +300,16 @@ function interTex(color) {
 }
 function sideTex(color, chalk) {
   const key = 'side' + color + (chalk ? 'c' : '');
-  if (!texCache[key]) texCache[key] = tex(128, 128, (g, w, h) => {
-    g.fillStyle = '#' + color.toString(16).padStart(6, '0'); g.fillRect(0, 0, w, h);
-    noise(g, w, h, 380, 0.1, false); noise(g, w, h, 140, 0.07, true);
-    g.strokeStyle = 'rgba(0,0,0,.22)'; g.lineWidth = 3; g.strokeRect(0, 0, w, h / 2); g.strokeRect(0, h / 2, w, h / 2);
-  }, { repeat: true });
+  if (!texCache[key]) texCache[key] = tex(256, 256, (g, w, h) => {
+    // paving stone is pale enough that multiply reads correctly here, and it
+    // keeps the stones' own colour variation rather than flattening it
+    const photo = paintBase(g, w, h, color, 'sidewalk', { mode: 'multiply', alpha: 0.85 });
+    noise(g, w, h, photo ? 110 : 380, photo ? 0.05 : 0.1, false);
+    noise(g, w, h, photo ? 40 : 140, 0.07, true);
+    // the slab seams are a distance cue for how fast you are moving — keep them
+    g.strokeStyle = 'rgba(0,0,0,.22)'; g.lineWidth = 6;
+    g.strokeRect(0, 0, w, h / 2); g.strokeRect(0, h / 2, w, h / 2);
+  }, { repeat: true, base: 'sidewalk' });
   return markShared(texCache[key]);
 }
 
@@ -242,10 +323,38 @@ export function buildingTexes(dname) {
   buildingTexCache[dname] = arr;
   return arr;
 }
+/* Relief derived from the facade's OWN finished canvas rather than from a tiled
+   photo. A shared brick normal map cannot know where the windows are, so it
+   embossed masonry across the glass and every pane came out looking like split
+   rock. Deriving from the composite means the brick gets its relief, the
+   painted glass and signage stay flat, and the scale matches by construction.
+   Grayscale height + bumpMap, so three.js differentiates it in the shader and
+   we never have to author tangent-space normals here. */
+function makeBumpTarget(w, h) {
+  const bc = document.createElement('canvas'); bc.width = w; bc.height = h;
+  const bctx = bc.getContext('2d');
+  const t = new THREE.CanvasTexture(bc);
+  t.colorSpace = THREE.NoColorSpace;         // height data, not colour
+  t.anisotropy = 4;
+  return {
+    texture: t,
+    refresh(src) {
+      bctx.clearRect(0, 0, w, h);
+      bctx.filter = 'grayscale(1) contrast(1.35)';
+      bctx.drawImage(src, 0, 0, w, h);     // scales: the bump target is half-res
+      bctx.filter = 'none';
+      t.needsUpdate = true;
+    },
+  };
+}
+
 function makeBuildingTex(d) {
   const brick = pick(d.brickset), store = Math.random() < (d.decor.glass ? 0.3 : 0.55);
   const glass = d.decor.glass && Math.random() < 0.55;
-  return tex(256, 384, (g, w, h) => {
+  // half the colour map's resolution: relief is low-frequency, and at full size
+  // this doubled the per-district facade texture budget for no visible gain
+  const bump = makeBumpTarget(128, 192);
+  const t = tex(256, 384, (g, w, h) => {
     if (glass) { // downtown glass tower face
       g.fillStyle = brick; g.fillRect(0, 0, w, h);
       for (let y = 8; y < h - 60; y += 34) for (let x = 10; x < w - 20; x += 30) {
@@ -259,11 +368,16 @@ function makeBuildingTex(d) {
       g.fillStyle = 'rgba(0,0,0,.3)'; for (let x = 14; x < w - 28; x += 22) g.fillRect(x, h - 50, 4, 40);
       return;
     }
-    g.fillStyle = brick; g.fillRect(0, 0, w, h);
-    g.strokeStyle = 'rgba(0,0,0,.22)'; g.lineWidth = 1;
-    for (let y = 0; y < h; y += 10) { g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke(); }
-    for (let y = 0; y < h; y += 10) for (let x = (y / 10) % 2 * 12; x < w; x += 24) { g.beginPath(); g.moveTo(x, y); g.lineTo(x, y + 10); g.stroke(); }
-    noise(g, w, h, 420, 0.09, false);
+    // ~7 x 9 puts a brick course at roughly its real size on a 12 m frontage
+    const photo = paintBase(g, w, h, brick, 'brick', { tiles: [7, 9], alpha: 0.9 });
+    if (!photo) {
+      // fallback course lines, only while the photo has yet to decode — drawing
+      // these OVER real brick would give every wall two conflicting bonds
+      g.strokeStyle = 'rgba(0,0,0,.22)'; g.lineWidth = 1;
+      for (let y = 0; y < h; y += 10) { g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke(); }
+      for (let y = 0; y < h; y += 10) for (let x = (y / 10) % 2 * 12; x < w; x += 24) { g.beginPath(); g.moveTo(x, y); g.lineTo(x, y + 10); g.stroke(); }
+    }
+    noise(g, w, h, photo ? 120 : 420, photo ? 0.05 : 0.09, false);
     const cols = irand(3, 4), gY = h - 86;
     for (let f = 0; f < 4; f++) {
       const wy = 26 + f * ((gY - 40) / 4);
@@ -292,7 +406,10 @@ function makeBuildingTex(d) {
       g.fillStyle = '#4a3a2c'; g.fillRect(w / 2 - 18, h - 66, 36, 44);
       g.fillStyle = '#8a8a90'; g.fillRect(12, h - 14, w - 24, 8);
     }
-  });
+  }, { base: 'brick', onPaint: c => bump.refresh(c) });
+  t.userData.bump = bump.texture;
+  markShared(bump.texture);        // lives as long as its colour map does
+  return t;
 }
 
 const MURAL_THEMES = ['sun', 'bird', 'hands', 'wave'];
@@ -940,7 +1057,7 @@ export function buildSegment(seg, opts) {
     // road
     const roadGeo = new THREE.PlaneGeometry(ROAD_W, L - 8);
     const rt = roadTex(d.road).clone(); rt.needsUpdate = true; rt.repeat.set(1, (L - 8) / 8);
-    const road = new THREE.Mesh(roadGeo, new THREE.MeshStandardMaterial({ map: rt }));
+    const road = new THREE.Mesh(roadGeo, new THREE.MeshStandardMaterial({ map: rt, roughness: 0.95, ...(pbrProfile('road') || {}) }));
     road.rotation.x = -Math.PI / 2; road.position.set(0, 0.01, -L / 2); road.userData.ownGeo = true;
     g.add(road);
 
@@ -1114,7 +1231,7 @@ function buildStreetDressing(g, seg, d, opts, dd) {
   const sideEnd = side => (side === turnSide) ? (L - CORNER_CLEAR) : (L - 6);
   // sidewalks
   for (const s of [-1, 1]) {
-    const sw = new THREE.Mesh(BOX, new THREE.MeshStandardMaterial({ map: sideTex(d.side) }));
+    const sw = new THREE.Mesh(BOX, new THREE.MeshStandardMaterial({ map: sideTex(d.side), roughness: 0.9, ...(pbrProfile('sidewalk') || {}) }));
     const t2 = sideTex(d.side).clone(); t2.needsUpdate = true; t2.repeat.set(1, (L - 8) / 3); sw.material.map = t2;
     sw.scale.set(SIDE_W, 0.24, L - 8); sw.position.set(s * (HALF + SIDE_W / 2), 0.12, -L / 2);
     g.add(sw);
@@ -1153,7 +1270,13 @@ function buildStreetDressing(g, seg, d, opts, dd) {
         // districts a heavier multiplier crushed them to pure black on screen
         const sideM = cmat(new THREE.Color(d.brickset[0]).multiplyScalar(0.82).getHex());
         const roofM = cmat(new THREE.Color(d.brickset[0]).multiplyScalar(0.6).getHex());
-        const bld = new THREE.Mesh(BOX, [sideM, sideM, roofM, roofM, new THREE.MeshStandardMaterial({ map: pick(texes) }), sideM]);
+        const faceTex = pick(texes);
+        const faceM = new THREE.MeshStandardMaterial({
+          map: faceTex, roughness: 0.92, metalness: 0,
+          // derived from this facade's own canvas — see makeBumpTarget
+          bumpMap: faceTex.userData.bump || null, bumpScale: 1.4,
+        });
+        const bld = new THREE.Mesh(BOX, [sideM, sideM, roofM, roofM, faceM, sideM]);
         bld.position.set(side * (WALL_X + depth / 2), h / 2, -(dpos + w / 2));
         bld.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2;
         /* After the Y-rotation local x runs ALONG the street, so scale.x is the
