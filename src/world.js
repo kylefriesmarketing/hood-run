@@ -131,7 +131,7 @@ export function trackView(px, pz) {
      sun threw 15-tall buildings clear across the road and put the whole play
      area — and every hazard on it — in shade. At 12/46 the same building lands
      its shadow on the sidewalk, keeping the lanes lit and readable. */
-  sun.position.set(px - 12, 46, pz + 15);
+  sun.position.set(px + curSunOff.x, curSunOff.y, pz + curSunOff.z);
   sun.target.position.set(px, 0, pz);
   sun.target.updateMatrixWorld();
 }
@@ -151,18 +151,22 @@ export function applyDistrict(name, immediate) {
     sky: new THREE.Color(d.sky), fog: new THREE.Color(d.fog[0]), fogNear: d.fog[1], fogFar: d.fog[2],
     hemiSky: new THREE.Color(d.hemi[0]), hemiGnd: new THREE.Color(d.hemi[1]), hemiI: d.hemi[2],
     sunC: new THREE.Color(d.sun[0]), sunI: d.sun[1], ground: new THREE.Color(d.side).multiplyScalar(0.55),
+    sunOff: new THREE.Vector3(...(d.sunOff || [-12, 46, 15])),
   };
   if (immediate) { setLights(to); lightLerp.t = 1; lightLerp.to = to; refreshEnv(); return; }
   lightLerp.from = snapLights(); lightLerp.to = to; lightLerp.t = 0;
 }
 const curSky = new THREE.Color(0x9fc7e8);      // drives the dome gradient
+const curSunOff = new THREE.Vector3(-12, 46, 15);  // read every frame by followCam
 function snapLights() {
   return { sky: curSky.clone(), fog: scene.fog.color.clone(), fogNear: scene.fog.near, fogFar: scene.fog.far,
     hemiSky: hemi.color.clone(), hemiGnd: hemi.groundColor.clone(), hemiI: hemi.intensity,
-    sunC: sun.color.clone(), sunI: sun.intensity, ground: groundPlane.material.color.clone() };
+    sunC: sun.color.clone(), sunI: sun.intensity, ground: groundPlane.material.color.clone(),
+    sunOff: curSunOff.clone() };
 }
 function setLights(v) {
   curSky.copy(v.sky);
+  if (v.sunOff) curSunOff.copy(v.sunOff);
   scene.fog.color.copy(v.fog); scene.fog.near = v.fogNear; scene.fog.far = v.fogFar;
   // shadowed surfaces are lit by the hemisphere alone, so lift it to stop the
   // street canyon going muddy now that buildings actually cast
@@ -181,6 +185,7 @@ export function updateLights(dt) {
   const a = lightLerp.from, b = lightLerp.to, t = lightLerp.t, out = {};
   for (const k of ['sky', 'fog', 'hemiSky', 'hemiGnd', 'sunC', 'ground']) out[k] = a[k].clone().lerp(b[k], t);
   for (const k of ['fogNear', 'fogFar', 'hemiI', 'sunI']) out[k] = a[k] + (b[k] - a[k]) * t;
+  out.sunOff = a.sunOff.clone().lerp(b.sunOff, t);
   setLights(out);
   if (lightLerp.t >= 1) refreshEnv();     // rebake IBL once the new sky settles
 }
@@ -563,8 +568,21 @@ export function grainMat(color, profileKey) {
   }));
   return grainMatCache[key];
 }
-const shadowGeo = markShared(new THREE.CircleGeometry(0.6, 16));
-const shadowMat = markShared(new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.3, depthWrite: false }));
+/* Soft AO disc instead of a hard black circle: the falloff is what makes a
+   character read as STANDING on the ground rather than wearing a sticker.
+   Texture is black with the falloff in ALPHA, so drive material.opacity —
+   tinting a black texture multiplies to black and does nothing. */
+const shadowTex = markShared((() => {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(32, 32, 3, 32, 32, 31);
+  grad.addColorStop(0, 'rgba(0,0,0,.6)'); grad.addColorStop(0.55, 'rgba(0,0,0,.32)');
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = grad; g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+})());
+const shadowGeo = markShared(new THREE.PlaneGeometry(1.6, 1.6));
+const shadowMat = markShared(new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false }));
 export function blobShadow(scale = 1) {
   const s = new THREE.Mesh(shadowGeo, shadowMat); s.rotation.x = -Math.PI / 2; s.position.y = 0.032; s.scale.setScalar(scale); return s;
 }
@@ -1094,7 +1112,13 @@ export function buildSegment(seg, opts) {
     // road
     const roadGeo = new THREE.PlaneGeometry(ROAD_W, L - 8);
     const rt = roadTex(d.road).clone(); rt.needsUpdate = true; rt.repeat.set(1, (L - 8) / 8);
-    const road = new THREE.Mesh(roadGeo, new THREE.MeshStandardMaterial({ map: rt, roughness: 0.95, ...(pbrProfile('road') || {}) }));
+    // wet: material.roughness MULTIPLIES the ORM's roughness channel, so the
+    // sheen keeps the asphalt's own variation instead of going uniform mirror
+    const wet = d.wet || 0;
+    const road = new THREE.Mesh(roadGeo, new THREE.MeshStandardMaterial({
+      map: rt, roughness: wet ? (1 - wet * 0.62) : 0.95,
+      envMapIntensity: 1 + wet * 1.1, ...(pbrProfile('road') || {}),
+    }));
     road.rotation.x = -Math.PI / 2; road.position.set(0, 0.01, -L / 2); road.userData.ownGeo = true;
     g.add(road);
 
