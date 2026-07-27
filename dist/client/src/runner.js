@@ -22,39 +22,53 @@ export function makeRunner(equipped) {
   const skin = cosmeticById('skin', equipped.skin).color;
 
   /* articulated body from the shared humanoid; cosmetics layer on top */
-  const built = buildHumanoid({ skin, outfit, shoes, pants: 0x2a3038, build: 'runner' });
+  const built = buildHumanoid({ skin, outfit, shoes, pants: 0x2a3038, build: 'runner', hood: true });
   const mesh = built.group, parts = built.parts, body = parts.body;
+  const HY = parts.headY;          // hats key off the real head height
 
   // the City Trust money bag, slung cross-body (cartoon sack)
   const strap = box(0.09, 0.66, 0.42, 0x6a4a2c, 0.13, 1.24, 0); strap.rotation.z = 0.52; body.add(strap);
-  // tucked against the small of his back rather than floating off the hip
-  const sack = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), new THREE.MeshStandardMaterial({ color: 0xd8b878, roughness: 0.9 }));
-  sack.scale.set(1, 1.1, 0.75); sack.position.set(-0.2, 1.02, -0.3); body.add(sack);
-  body.add(box(0.11, 0.08, 0.11, 0xa8885c, -0.2, 1.26, -0.3));           // tied neck
-  const dollar = new THREE.Mesh(new THREE.PlaneGeometry(0.17, 0.17), new THREE.MeshBasicMaterial({ map: dollarTex(), transparent: true, side: THREE.DoubleSide }));
-  dollar.position.set(-0.2, 1.02, -0.47); dollar.rotation.y = Math.PI; body.add(dollar);
+  /* satchel at the hip. It was nearly head-sized before, which read as luggage
+     and swamped his silhouette; this is a bag he could actually run with. */
+  const sack = new THREE.Mesh(new THREE.SphereGeometry(0.135, 10, 8), new THREE.MeshStandardMaterial({ color: 0xd8b878, roughness: 0.92 }));
+  sack.scale.set(1, 1.15, 0.72); sack.position.set(-0.235, 1.03, -0.19); body.add(sack);
+  body.add(box(0.07, 0.05, 0.07, 0xa8885c, -0.235, 1.18, -0.19));        // tied neck
+  const dollar = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 0.1), new THREE.MeshBasicMaterial({ map: dollarTex(), transparent: true, side: THREE.DoubleSide }));
+  dollar.position.set(-0.3, 1.03, -0.19); dollar.rotation.y = -Math.PI / 2; body.add(dollar);
 
-  // headwear sits on the new head (centre y 1.80, ~0.4 tall)
+  /* headwear, placed relative to the skull rather than hard-coded heights, and
+     rounded to match it — a flat slab cap on a shaped head looks stuck on */
+  const dome = (col, ry, sy) => {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.55),
+      new THREE.MeshStandardMaterial({ color: col, roughness: 0.85 }));
+    m.scale.set(0.225, sy, 0.222); m.position.y = ry; return m;
+  };
   if (hat.kind === 'cap') {
-    body.add(box(0.42, 0.14, 0.42, hat.color, 0, 2.03, 0));
-    body.add(box(0.42, 0.05, 0.22, hat.color, 0, 1.98, 0.27));
+    body.add(dome(hat.color, HY + 0.02, 0.2));
+    body.add(box(0.34, 0.045, 0.2, hat.color, 0, HY + 0.05, 0.22));       // peak
   } else if (hat.kind === 'beanie') {
-    body.add(box(0.42, 0.18, 0.42, hat.color, 0, 2.02, 0));
-    body.add(box(0.13, 0.13, 0.13, hat.color, 0, 2.14, 0));
+    // dome sits ON the crown with the band wrapping just below it; the band was
+    // above the dome before, which punched the hat apart into floating slabs
+    body.add(dome(hat.color, HY - 0.02, 0.26));
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 12),
+      new THREE.MeshStandardMaterial({ color: hat.color, roughness: 0.9 }));
+    band.scale.set(0.235, 0.075, 0.232); band.position.y = HY + 0.02; body.add(band);
   } else if (hat.kind === 'bucket') {
-    body.add(box(0.44, 0.16, 0.44, hat.color, 0, 2.03, 0));
-    body.add(box(0.62, 0.05, 0.62, hat.color, 0, 1.96, 0));               // all-round brim
+    body.add(dome(hat.color, HY + 0.01, 0.19));
+    body.add(box(0.56, 0.045, 0.56, hat.color, 0, HY + 0.05, 0));         // all-round brim
   } else if (hat.kind === 'visor') {
-    body.add(box(0.44, 0.09, 0.44, hat.color, 0, 1.99, 0));
-    body.add(box(0.44, 0.05, 0.24, hat.color, 0, 1.96, 0.28));
-    body.add(box(0.4, 0.12, 0.4, 0x1c1410, 0, 2.05, 0));                  // hair above the visor
+    body.add(box(0.4, 0.06, 0.4, hat.color, 0, HY + 0.1, 0));
+    body.add(box(0.34, 0.04, 0.2, hat.color, 0, HY + 0.09, 0.22));
   } else if (hat.kind === 'phones') {
-    body.add(box(0.4, 0.12, 0.4, 0x1c1410, 0, 2.03, 0));                  // hair
-    body.add(box(0.46, 0.06, 0.15, hat.color, 0, 2.11, 0));               // headband
-    for (const s of [-1, 1]) body.add(box(0.09, 0.2, 0.22, hat.color, s * 0.23, 1.9, 0));
-  } else {
-    body.add(box(0.4, 0.12, 0.4, 0x1c1410, 0, 2.03, 0));                  // hair
+    body.add(box(0.42, 0.05, 0.13, hat.color, 0, HY + 0.21, 0));          // headband
+    for (const s of [-1, 1]) {
+      const cup = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6),
+        new THREE.MeshStandardMaterial({ color: hat.color, roughness: 0.6 }));
+      cup.scale.set(0.055, 0.085, 0.085); cup.position.set(s * 0.21, HY - 0.02, 0.01);
+      body.add(cup);
+    }
   }
+  // (no hat: the humanoid's own hair cap already covers the crown)
   // the real cast shadow does the grounding now; the blob is just a soft
   // contact darkening underneath so he never looks detached at a bad sun angle
   const blob = blobShadow(0.85); blob.material = blob.material.clone();
