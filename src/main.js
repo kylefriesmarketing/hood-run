@@ -194,7 +194,11 @@ function ensurePreview() {
     preview.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   } catch { return false; }                     // no spare GL context — skip the preview
   preview.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  // match the world's response, or Jay looks like a different character in here
+  preview.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  preview.renderer.toneMappingExposure = 1.25;
   preview.scene = new THREE.Scene();
+  preview.scene.environment = W.scene.environment;
   preview.camera = new THREE.PerspectiveCamera(34, 1, 0.1, 50);
   preview.scene.add(new THREE.HemisphereLight(0xdCE6FF, 0x2a3050, 1.25));
   const key = new THREE.DirectionalLight(0xfff2d8, 1.0); key.position.set(-3, 5, 4); preview.scene.add(key);
@@ -204,6 +208,7 @@ function ensurePreview() {
 }
 export function refreshPreview() {
   if (!ensurePreview()) return;
+  preview.scene.environment = W.scene.environment;    // follows the current district
   preview.rig.clear();
   const built = makeRunner(loadSave().unlocks.equipped);
   built.group.position.y = -1.15;               // centre the body in frame

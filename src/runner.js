@@ -28,7 +28,7 @@ export function makeRunner(equipped) {
   body.add(box(0.42, 0.42, 0.42, skin, 0, 1.72, 0));
   // the City Trust money bag, slung cross-body (cartoon sack)
   const strap = box(0.1, 0.7, 0.46, 0x6a4a2c, 0.15, 1.15, 0); strap.rotation.z = 0.5; body.add(strap);
-  const sack = new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 8), new THREE.MeshLambertMaterial({ color: 0xd8b878 }));
+  const sack = new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 8), new THREE.MeshStandardMaterial({ color: 0xd8b878 }));
   sack.scale.set(1, 1.15, 0.8); sack.position.set(-0.34, 0.92, -0.26); body.add(sack);
   body.add(box(0.14, 0.1, 0.14, 0xa8885c, -0.34, 1.22, -0.26));          // tied neck
   const dollar = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 0.22), new THREE.MeshBasicMaterial({ map: dollarTex(), transparent: true }));

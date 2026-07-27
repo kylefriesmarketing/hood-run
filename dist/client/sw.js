@@ -1,13 +1,13 @@
 /* HOOD RUN — service worker: offline-first cache of the static shell.
    Bump CACHE when any listed asset changes. */
-const CACHE = 'hood-run-v8';
+const CACHE = 'hood-run-v9';
 const ASSETS = [
   './', './index.html', './manifest.webmanifest', './icon.svg',
   './lib/three.module.js',
   './src/main.js', './src/game.js', './src/world.js', './src/runner.js',
   './src/segment-generator.js', './src/collisions.js', './src/progression.js',
   './src/save.js', './src/audio.js', './src/ui.js', './src/input.js',
-  './src/data.js', './src/vfx.js', './src/postfx.js',
+  './src/data.js', './src/vfx.js', './src/postfx.js', './src/geo.js',
 ];
 
 self.addEventListener('install', e => {

@@ -4,6 +4,7 @@
 
 import * as THREE from '../lib/three.module.js';
 import { LANE_W, ROAD_W, HALF, SIDE_W, WALL_X, DISTRICTS, ROOF_H } from './data.js';
+import { makeBuilder, detailMaterial } from './geo.js';
 
 export let scene, camera, renderer;
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -11,12 +12,25 @@ const pick = a => a[Math.floor(Math.random() * a.length)];
 const irand = (a, b) => Math.floor(rand(a, b + 1));
 
 /* ---------------- boot ---------------- */
-let hemi, sun, skyGroup, groundPlane, skyDome;
+let hemi, sun, skyGroup, groundPlane, skyDome, pmrem, envScene, envDome, envRT = null;
+
+/* rebake the environment from the current sky gradient */
+function refreshEnv() {
+  if (!pmrem) return;
+  const prev = envRT;
+  envRT = pmrem.fromScene(envScene, 0.05);
+  scene.environment = envRT.texture;
+  if (prev) prev.dispose();               // the old cube target would leak otherwise
+}
 export function initWorld(canvas) {
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.setSize(innerWidth, innerHeight);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  /* Filmic response instead of a raw clamp: highlights roll off rather than
+     blowing to flat white, which is what made the old Lambert look plasticky. */
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.25;
   scene = new THREE.Scene();
   scene.fog = new THREE.Fog(0xb8d8ec, 40, 175);
   camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.1, 400);
@@ -72,6 +86,18 @@ export function initWorld(canvas) {
   skyDome.renderOrder = -1000;
   scene.add(skyDome);
 
+  /* Image-based lighting. Standard materials only really come alive with an
+     environment to reflect, so bake one straight off the sky dome: glass picks
+     up the sky, chrome and paintwork get a soft falloff, and everything gains
+     the ambient bounce a single hemisphere light can't fake. Regenerated only
+     when a district transition finishes — it is far too costly per frame. */
+  pmrem = new THREE.PMREMGenerator(renderer);
+  pmrem.compileEquirectangularShader();
+  envScene = new THREE.Scene();
+  envDome = new THREE.Mesh(skyDome.geometry, skyDome.material);
+  envScene.add(envDome);
+  refreshEnv();
+
   skyGroup = new THREE.Group(); scene.add(skyGroup);
   { // sun disc + drifting clouds
     const disc = new THREE.Mesh(new THREE.CircleGeometry(10, 24), new THREE.MeshBasicMaterial({ color: 0xfff8e0, fog: false }));
@@ -88,7 +114,7 @@ export function initWorld(canvas) {
       skyGroup.add(cl);
     }
   }
-  groundPlane = new THREE.Mesh(new THREE.PlaneGeometry(520, 520), new THREE.MeshLambertMaterial({ color: 0x6b7a5f }));
+  groundPlane = new THREE.Mesh(new THREE.PlaneGeometry(520, 520), new THREE.MeshStandardMaterial({ color: 0x6b7a5f }));
   groundPlane.rotation.x = -Math.PI / 2; groundPlane.position.y = -0.06;
   groundPlane.receiveShadow = true; scene.add(groundPlane);
   return { scene, camera, renderer };
@@ -123,7 +149,7 @@ export function applyDistrict(name, immediate) {
     hemiSky: new THREE.Color(d.hemi[0]), hemiGnd: new THREE.Color(d.hemi[1]), hemiI: d.hemi[2],
     sunC: new THREE.Color(d.sun[0]), sunI: d.sun[1], ground: new THREE.Color(d.side).multiplyScalar(0.55),
   };
-  if (immediate) { setLights(to); lightLerp.t = 1; lightLerp.to = to; return; }
+  if (immediate) { setLights(to); lightLerp.t = 1; lightLerp.to = to; refreshEnv(); return; }
   lightLerp.from = snapLights(); lightLerp.to = to; lightLerp.t = 0;
 }
 const curSky = new THREE.Color(0x9fc7e8);      // drives the dome gradient
@@ -153,6 +179,7 @@ export function updateLights(dt) {
   for (const k of ['sky', 'fog', 'hemiSky', 'hemiGnd', 'sunC', 'ground']) out[k] = a[k].clone().lerp(b[k], t);
   for (const k of ['fogNear', 'fogFar', 'hemiI', 'sunI']) out[k] = a[k] + (b[k] - a[k]) * t;
   setLights(out);
+  if (lightLerp.t >= 1) refreshEnv();     // rebake IBL once the new sky settles
 }
 
 /* ---------------- texture factory ---------------- */
@@ -372,7 +399,9 @@ export const BOX = new THREE.BoxGeometry(1, 1, 1);
 const matCache = {};
 export function cmat(color, opts = {}) {
   const key = color + JSON.stringify(opts);
-  if (!matCache[key]) matCache[key] = new THREE.MeshLambertMaterial({ color, ...opts });
+  // painted/plastic-ish default: mostly rough with a hint of sheen, so the
+  // environment map reads on curved props without turning the city into chrome
+  if (!matCache[key]) matCache[key] = new THREE.MeshStandardMaterial({ color, roughness: 0.78, metalness: 0.06, ...opts });
   return matCache[key];
 }
 export function box(w, h, d, color, x = 0, y = 0, z = 0, m) {
@@ -445,7 +474,7 @@ function mkParkedCar() {
 function mkStand() { // market produce stand
   const g = new THREE.Group();
   g.add(box(2.2, 0.7, 1.2, 0x8a5a2c, 0, 0.45, 0));
-  const aw = new THREE.Mesh(BOX, new THREE.MeshLambertMaterial({ map: stripeTex(pick(['#c0392b', '#1f8a4c', '#28648f']), '#f4ead8') }));
+  const aw = new THREE.Mesh(BOX, new THREE.MeshStandardMaterial({ map: stripeTex(pick(['#c0392b', '#1f8a4c', '#28648f']), '#f4ead8') }));
   aw.scale.set(2.4, 0.06, 1.5); aw.position.set(0, 1.8, 0.1); aw.rotation.x = -0.15; g.add(aw);
   for (const s of [-1, 1]) g.add(box(0.08, 1.7, 0.08, 0x6a4a2c, s * 1.05, 0.85, 0.5));
   const fruits = [0xe8604c, 0xe0a020, 0x5aa050, 0xffd23c];
@@ -700,7 +729,7 @@ export function mkHazardMesh(kind) {
       return g; }
     case 'barrier': { const g = new THREE.Group();
       for (const s of [-0.8, 0.8]) g.add(box(0.12, 0.95, 0.34, 0x8a6a3a, s, 0.48, 0));
-      const bar = new THREE.Mesh(BOX, new THREE.MeshLambertMaterial({ map: stripeTex('#e07020', '#f0f0f0') }));
+      const bar = new THREE.Mesh(BOX, new THREE.MeshStandardMaterial({ map: stripeTex('#e07020', '#f0f0f0') }));
       bar.scale.set(1.9, 0.3, 0.1); bar.position.y = 0.8; g.add(bar);
       const bar2 = bar.clone(); bar2.position.y = 0.4; g.add(bar2);
       return g; }
@@ -714,7 +743,7 @@ export function mkHazardMesh(kind) {
       for (let i = 0; i < 4; i++) g.add(box(0.5, 0.4, 0.5, 0xb8894c, -1.0 + i * 0.7, 1.6, 0));
       return g; }
     case 'table': { const g = mkCafeTable(); const um = box(0.06, 1.4, 0.06, 0x8a6a3a, 0, 1.4, 0); g.add(um);
-      const umb = new THREE.Mesh(new THREE.ConeGeometry(1.0, 0.5, 8), new THREE.MeshLambertMaterial({ map: stripeTex('#c0392b', '#f4ead8') }));
+      const umb = new THREE.Mesh(new THREE.ConeGeometry(1.0, 0.5, 8), new THREE.MeshStandardMaterial({ map: stripeTex('#c0392b', '#f4ead8') }));
       umb.position.y = 2.2; g.add(umb); return g; }
     case 'stand': return mkStand();
     case 'parkedcar': return mkParkedCar();
@@ -726,11 +755,11 @@ export function mkHazardMesh(kind) {
     case 'scaffold': { const g = new THREE.Group();
       for (const x of [-HALF + 0.5, HALF - 0.5]) { g.add(box(0.14, 1.5, 0.14, 0x9a6a2f, x, 0.75, -0.5)); g.add(box(0.14, 1.5, 0.14, 0x9a6a2f, x, 0.75, 0.5)); }
       g.add(box(ROAD_W - 0.6, 0.12, 1.6, 0x7a5a3a, 0, 1.42, 0));
-      const b = new THREE.Mesh(BOX, new THREE.MeshLambertMaterial({ map: stripeTex('#e07020', '#f0f0f0') }));
+      const b = new THREE.Mesh(BOX, new THREE.MeshStandardMaterial({ map: stripeTex('#e07020', '#f0f0f0') }));
       b.scale.set(ROAD_W - 0.6, 0.3, 0.06); b.position.set(0, 1.2, 0.8); g.add(b);
       return g; }
     case 'awning': { const g = new THREE.Group();
-      const aw = new THREE.Mesh(BOX, new THREE.MeshLambertMaterial({ map: stripeTex('#c0392b', '#f4ead8') }));
+      const aw = new THREE.Mesh(BOX, new THREE.MeshStandardMaterial({ map: stripeTex('#c0392b', '#f4ead8') }));
       aw.scale.set(4.2, 0.1, 1.2); aw.position.y = 1.32; aw.rotation.z = 0.06; g.add(aw);
       for (const s of [-1.9, 1.9]) g.add(box(0.1, 1.32, 0.1, 0x8a6a3a, s, 0.66, 0.4));
       return g; }
@@ -741,7 +770,7 @@ export function mkHazardMesh(kind) {
       return g; }
     case 'gatebar': { const g = new THREE.Group();
       for (const s of [-HALF + 0.4, HALF - 0.4]) g.add(box(0.16, 1.5, 0.16, 0x4a5058, s, 0.75, 0));
-      const bar = new THREE.Mesh(BOX, new THREE.MeshLambertMaterial({ map: stripeTex('#e0c020', '#2a2e36') }));
+      const bar = new THREE.Mesh(BOX, new THREE.MeshStandardMaterial({ map: stripeTex('#e0c020', '#2a2e36') }));
       bar.scale.set(ROAD_W - 0.6, 0.22, 0.14); bar.position.y = 1.36; g.add(bar);
       return g; }
     case 'fence': { const g = new THREE.Group(); const m = cmat(0x8a8f99);
@@ -775,7 +804,7 @@ export function mkHazardMesh(kind) {
     case 'skylight': { const g = new THREE.Group();
       g.add(box(1.7, 0.22, 1.9, 0x6a6560, 0, 0.11, 0));                    // curb
       const glass = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.3, 1.6),
-        new THREE.MeshLambertMaterial({ color: 0x9fd0e8, transparent: true, opacity: 0.75 }));
+        new THREE.MeshStandardMaterial({ color: 0x9fd0e8, transparent: true, opacity: 0.75 }));
       glass.position.y = 0.34; g.add(glass);
       g.add(box(0.08, 0.34, 1.6, 0x4a5058, 0, 0.36, 0));
       return g; }
@@ -830,7 +859,7 @@ function billTex() {
 }
 export function mkCash() {
   const g = new THREE.Group();
-  const billMat = new THREE.MeshLambertMaterial({ map: billTex() });
+  const billMat = new THREE.MeshStandardMaterial({ map: billTex() });
   const edgeMat = cmat(0xcfe8d2);
   // four bills fanned very slightly so the stack reads at speed
   for (let i = 0; i < 4; i++) {
@@ -874,7 +903,7 @@ export function mkPowerup(kind) {
     g.add(box(0.12, 0.24, 0.12, 0xf0f0f0, -0.32, 0.24, 0)); g.add(box(0.12, 0.24, 0.12, 0xf0f0f0, 0.32, 0.24, 0)); }
   else if (kind === 'doublestyle') { const s = new THREE.Mesh(new THREE.OctahedronGeometry(0.4, 0), cmat(0xff4f9a, { emissive: 0x8a1a4e })); g.add(s);
     const s2 = new THREE.Mesh(new THREE.OctahedronGeometry(0.22, 0), cmat(0xffd23c, { emissive: 0x8a6a1a })); s2.position.set(0.3, 0.3, 0); g.add(s2); }
-  else if (kind === 'shield') { const sh = new THREE.Mesh(new THREE.SphereGeometry(0.42, 12, 10), new THREE.MeshLambertMaterial({ color: 0x7bff5e, transparent: true, opacity: 0.5 })); g.add(sh);
+  else if (kind === 'shield') { const sh = new THREE.Mesh(new THREE.SphereGeometry(0.42, 12, 10), new THREE.MeshStandardMaterial({ color: 0x7bff5e, transparent: true, opacity: 0.5 })); g.add(sh);
     g.add(box(0.3, 0.4, 0.1, 0x2f8a52, 0, 0, 0)); }
   return g;
 }
@@ -895,7 +924,7 @@ export function buildSegment(seg, opts) {
     // road
     const roadGeo = new THREE.PlaneGeometry(ROAD_W, L - 8);
     const rt = roadTex(d.road).clone(); rt.needsUpdate = true; rt.repeat.set(1, (L - 8) / 8);
-    const road = new THREE.Mesh(roadGeo, new THREE.MeshLambertMaterial({ map: rt }));
+    const road = new THREE.Mesh(roadGeo, new THREE.MeshStandardMaterial({ map: rt }));
     road.rotation.x = -Math.PI / 2; road.position.set(0, 0.01, -L / 2); road.userData.ownGeo = true;
     g.add(road);
 
@@ -906,7 +935,7 @@ export function buildSegment(seg, opts) {
     }
 
     // intersection patch at exit
-    const patch = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_W, ROAD_W), new THREE.MeshLambertMaterial({ map: interTex(d.road) }));
+    const patch = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_W, ROAD_W), new THREE.MeshStandardMaterial({ map: interTex(d.road) }));
     patch.rotation.x = -Math.PI / 2; patch.position.set(0, 0.012, -L); patch.userData.ownGeo = true;
     g.add(patch);
     if (opts.first) {
@@ -968,7 +997,7 @@ export function buildSegment(seg, opts) {
     // straight roof exit: nothing to draw, the deck just runs on
   } else {
     for (const s of [-1, 1]) {
-      const stub = new THREE.Mesh(new THREE.PlaneGeometry(12, ROAD_W), new THREE.MeshLambertMaterial({ color: d.road }));
+      const stub = new THREE.Mesh(new THREE.PlaneGeometry(12, ROAD_W), new THREE.MeshStandardMaterial({ color: d.road }));
       stub.rotation.x = -Math.PI / 2; stub.position.set(s * 10, 0.008, -L); stub.userData.ownGeo = true; g.add(stub);
       g.add(box(12, 13, 12, 0x7a6448, s * 13, 6.5, -L - 11));
     }
@@ -1006,8 +1035,62 @@ export function buildSegment(seg, opts) {
   return g;
 }
 
+/* Architectural detail for one building, accumulated into a shared builder so a
+   whole block's cornices, ledges, parapets and roof clutter cost ONE draw call.
+   Local axes here are segment space: x is across the street, z is along it. */
+function addBuildingDetail(B, side, dpos, w, h, depth, d) {
+  const cx = side * (WALL_X + depth / 2);
+  const cz = -(dpos + w / 2);
+  const brick = new THREE.Color(d.brickset[0]);
+  // only a little lighter than the brick: at 0.42 the bands read as bright
+  // shelves bolted to the facade rather than stonework belonging to it
+  const trim = brick.clone().lerp(new THREE.Color(0xffffff), 0.2).getHex();
+  const trimDark = brick.clone().multiplyScalar(0.72).getHex();
+  const deck = brick.clone().multiplyScalar(0.5).getHex();
+  const metal = 0x9aa2ab, dark = 0x44484f, wood = 0x8a6a44;
+
+  B.box(w + 0.5, 1.0, depth + 0.4, cx, 0.5, cz, trimDark);            // plinth
+  for (let y = 4.4; y < h - 2.4; y += 4.6)                             // string courses
+    B.box(w + 0.22, 0.2, depth + 0.18, cx, y, cz, trim);
+  B.box(w + 0.75, 0.6, depth + 0.65, cx, h - 0.3, cz, trim);           // cornice
+
+  // parapet as four thin walls, so roof clutter still reads behind it
+  const pt = 0.32, py = h + 0.55;
+  B.box(depth + 0.2, 1.1, pt, cx, py, cz + w / 2, trimDark);
+  B.box(depth + 0.2, 1.1, pt, cx, py, cz - w / 2, trimDark);
+  B.box(pt, 1.1, w + 0.2, cx + depth / 2, py, cz, trimDark);
+  B.box(pt, 1.1, w + 0.2, cx - depth / 2, py, cz, trimDark);
+  B.box(depth, 0.16, w, cx, h + 0.08, cz, deck);                       // roof deck
+
+  // roof clutter — the thing that actually breaks up a flat skyline
+  const rx = () => cx + (Math.random() - 0.5) * (depth - 3.2);
+  const rz = () => cz + (Math.random() - 0.5) * (w - 3.2);
+  if (Math.random() < 0.55) {                                          // water tower
+    const tx = rx(), tz = rz();
+    for (const [ox, oz] of [[-0.7, -0.7], [0.7, -0.7], [-0.7, 0.7], [0.7, 0.7]])
+      B.box(0.16, 1.8, 0.16, tx + ox, h + 1.0, tz + oz, dark);
+    B.box(2.1, 2.3, 2.1, tx, h + 3.0, tz, wood);
+    B.box(2.3, 0.2, 2.3, tx, h + 4.2, tz, trimDark);
+    B.box(1.1, 0.7, 1.1, tx, h + 4.6, tz, wood);
+  }
+  const acs = 1 + Math.floor(Math.random() * 3);                       // AC / vent units
+  for (let i = 0; i < acs; i++) {
+    const ax = rx(), az = rz();
+    B.box(1.5, 0.85, 1.3, ax, h + 0.55, az, metal);
+    B.box(1.55, 0.12, 1.35, ax, h + 1.02, az, dark);
+  }
+  if (Math.random() < 0.5) B.box(1.6, 1.5, 1.5, rx(), h + 0.9, rz(), trimDark);  // roof access
+  if (Math.random() < 0.45) {                                          // antenna mast
+    const ax = rx(), az = rz();
+    B.box(0.12, 3.4, 0.12, ax, h + 1.8, az, dark);
+    B.box(1.1, 0.08, 0.08, ax, h + 3.1, az, dark);
+    B.box(0.08, 0.08, 0.9, ax, h + 2.8, az, dark);
+  }
+}
+
 function buildStreetDressing(g, seg, d, opts, dd) {
   const L = seg.len;
+  const B = makeBuilder();          // one merged detail mesh for the whole block
   // The next segment's road turns into the INSIDE corner of this junction, so
   // keep that side clear near the exit or buildings/props poke into the street.
   const turnSide = seg.exit === 'R' ? 1 : seg.exit === 'L' ? -1 : 0;
@@ -1015,7 +1098,7 @@ function buildStreetDressing(g, seg, d, opts, dd) {
   const sideEnd = side => (side === turnSide) ? (L - CORNER_CLEAR) : (L - 6);
   // sidewalks
   for (const s of [-1, 1]) {
-    const sw = new THREE.Mesh(BOX, new THREE.MeshLambertMaterial({ map: sideTex(d.side) }));
+    const sw = new THREE.Mesh(BOX, new THREE.MeshStandardMaterial({ map: sideTex(d.side) }));
     const t2 = sideTex(d.side).clone(); t2.needsUpdate = true; t2.repeat.set(1, (L - 8) / 3); sw.material.map = t2;
     sw.scale.set(SIDE_W, 0.24, L - 8); sw.position.set(s * (HALF + SIDE_W / 2), 0.12, -L / 2);
     g.add(sw);
@@ -1036,7 +1119,7 @@ function buildStreetDressing(g, seg, d, opts, dd) {
       const roll = Math.random();
       if (dpos + w > endD) break;                                    // no partial building over the corner
       if (roll < 0.1 * dd && dpos + 8 < endD && d.decor?.murals) {   // mural lot
-        const wall = new THREE.Mesh(new THREE.PlaneGeometry(8, 3.4), new THREE.MeshLambertMaterial({ map: muralTex() }));
+        const wall = new THREE.Mesh(new THREE.PlaneGeometry(8, 3.4), new THREE.MeshStandardMaterial({ map: muralTex() }));
         wall.position.set(side * (WALL_X + 0.28), 1.7, -(dpos + 4));
         wall.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2;
         wall.userData.ownGeo = true; g.add(wall);
@@ -1054,11 +1137,16 @@ function buildStreetDressing(g, seg, d, opts, dd) {
         // districts a heavier multiplier crushed them to pure black on screen
         const sideM = cmat(new THREE.Color(d.brickset[0]).multiplyScalar(0.82).getHex());
         const roofM = cmat(new THREE.Color(d.brickset[0]).multiplyScalar(0.6).getHex());
-        const bld = new THREE.Mesh(BOX, [sideM, sideM, roofM, roofM, new THREE.MeshLambertMaterial({ map: pick(texes) }), sideM]);
+        const bld = new THREE.Mesh(BOX, [sideM, sideM, roofM, roofM, new THREE.MeshStandardMaterial({ map: pick(texes) }), sideM]);
         bld.position.set(side * (WALL_X + depth / 2), h / 2, -(dpos + w / 2));
         bld.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2;
-        bld.scale.set(depth, h, w);
+        /* After the Y-rotation local x runs ALONG the street, so scale.x is the
+           frontage and scale.z the depth away from the road. This was
+           (depth,h,w) — pinning every frontage to 10 while the loop advanced by
+           w (9..15), which left ragged gaps between neighbours. */
+        bld.scale.set(w, h, depth);
         g.add(bld);
+        addBuildingDetail(B, side, dpos, w, h, depth, d);
         if (Math.random() < 0.25 * dd && !d.decor?.glass) { const fe = mkFireEscape(); fe.position.set(side * (WALL_X - 0.5), 0, -(dpos + w / 2)); fe.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2; g.add(fe); }
         if (d.decor?.stoops && Math.random() < 0.35 * dd) { const st = mkStoop(); st.position.set(side * (WALL_X - 0.9), 0.24, -(dpos + w / 2)); st.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2; g.add(st); }
         if (d.decor?.neon && Math.random() < 0.6 * dd) {          // glowing shopfront neon
@@ -1115,13 +1203,21 @@ function buildStreetDressing(g, seg, d, opts, dd) {
     }
     g.userData.bulbs = bulbs;
   }
+
+  // emit the whole block's architectural detail as a single mesh
+  const detailGeo = B.build();
+  if (detailGeo) {
+    const dm = new THREE.Mesh(detailGeo, detailMaterial());
+    dm.userData.ownGeo = true;
+    g.add(dm);
+  }
 }
 
 /* rooftop route: tar-and-gravel deck, parapets, water tower, skyline below */
 function buildRooftopDressing(g, seg, d, opts) {
   const L = seg.len;
   // deck surface (replaces the road look)
-  const deck = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_W + 3, L - 6), new THREE.MeshLambertMaterial({
+  const deck = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_W + 3, L - 6), new THREE.MeshStandardMaterial({
     map: tex(128, 128, (g2, w, h) => {
       g2.fillStyle = '#3a3a40'; g2.fillRect(0, 0, w, h);
       noise(g2, w, h, 900, 0.2, false); noise(g2, w, h, 500, 0.12, true);
@@ -1201,7 +1297,7 @@ function buildAlleyDressing(g, seg, d, opts) {
     // one long wall the length of the segment, no rotation, brick on the face
     // that points at the road: -x (index 1) for the right wall, +x (0) for left.
     // Tile the texture down the alley so it doesn't stretch into a smear.
-    const face = new THREE.MeshLambertMaterial({ map: brickTex.clone() });
+    const face = new THREE.MeshStandardMaterial({ map: brickTex.clone() });
     face.map.wrapS = face.map.wrapT = THREE.RepeatWrapping; face.map.repeat.set(L / 10, 1); face.map.needsUpdate = true;
     const mats = side > 0 ? [plain, face, plain, plain, plain, plain] : [face, plain, plain, plain, plain, plain];
     const wall = new THREE.Mesh(BOX, mats);
