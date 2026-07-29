@@ -208,18 +208,27 @@ sun/wet/skyline, poles/wires/signals, pigeons/steam/clutter, rigged Jay +
 officers + bystanders (bank cops + sidewalk crowd), arrest animation, closet
 turntable. Zero known console errors; memory flat.
 
+City ambience SHIPPED (v19): per-district traffic-rumble bed (LFO-breathed
+brown noise) + crowd murmur (market/nightmarket) + distant horns/siren;
+`sfx.flap` on pigeon scatter (voice-capped — a flock is ONE flap) and
+`sfx.steam` passing grates, distance-attenuated. AMB tracks every node and
+timer and tears down on ambientSet/ambientStop — untracked beds STACK across
+district changes into a drone. `ambientDebug()` is the test hook. Mix levels
+are conservative and untuned by ear — Kyle had not heard them at handover.
+
 Open threads, in rough priority:
-1. **Human playtest tuning** — difficulty ramp, turn window, chase pressure.
-   Only Kyle can do this; the bot's survival distances are not a difficulty read.
-2. **City ambience audio** — pigeon flap on scatter, steam hiss, distant
-   traffic/sirens layer in audio.js (WebAudio synth, no files). Started
-   planning, not yet built.
-3. **Black pyramid artifact** on the horizon — pre-existing, invisible from
+1. **Human playtest tuning** — difficulty ramp, turn window, chase pressure,
+   AND the ambience mix levels. Only Kyle can do this; the bot's survival
+   distances are not a difficulty read.
+2. **Black pyramid artifact** on the horizon — pre-existing, invisible from
    all gameplay cameras, only from elevated free cams. Parked as a task chip;
    matters only for aerial/trailer shots. Raycast passes through it.
-4. The dog cameo is still the box-dog (charming; low priority).
-5. Store could sell outfit COLOURS for the rig (the vertex-colour system makes
+3. The dog cameo is still the box-dog (charming; low priority).
+4. Store could sell outfit COLOURS for the rig (the vertex-colour system makes
    any palette free).
+5. Render cost roughly doubled across the visual passes (backgrounded-tab
+   relative measurement); the adaptive quality ladder covers weak devices,
+   but pull this thread first if the game ever feels heavy on a phone.
 
 ## How to recreate from nothing
 
