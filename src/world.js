@@ -7,6 +7,7 @@ import { LANE_W, ROAD_W, HALF, SIDE_W, WALL_X, DISTRICTS, ROOF_H } from './data.
 import { makeBuilder, detailMaterial } from './geo.js';
 import { buildHumanoid } from './character.js';
 import { initPBR, onPBRReady, baseImage, pbrProfile } from './pbr.js';
+import { rigReady, createRigged, play, attachToBone } from './rig.js';
 
 export let scene, camera, renderer;
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -909,7 +910,34 @@ function mkNeonSign() {
   const m = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 1.0), new THREE.MeshBasicMaterial({ map: t, transparent: true }));
   return m;
 }
-function mkNeighbor() { // sidewalk person; the waving loop is driven by the view
+/* Fixed outfit combos, NOT a free cross-product: every combo bakes a coloured
+   geometry variant in rig.js's cache, so the pool must stay small. Eight reads
+   as a crowd; a hundred and eighty would quietly hold 40MB of buffers. */
+const NEIGHBOR_FITS = [
+  { skin: 0x8d5a3b, top: 0x3bd6c6, pants: 0x2a2e36, shoes: 0xf0f0f0 },
+  { skin: 0x6b4226, top: 0xe8604c, pants: 0x3a4250, shoes: 0x2a2e36 },
+  { skin: 0xc79a6b, top: 0xe0a020, pants: 0x5a4a3a, shoes: 0xd23c3c },
+  { skin: 0xa06a44, top: 0x8e44ad, pants: 0x2a2e36, shoes: 0xf0f0f0 },
+  { skin: 0x8d5a3b, top: 0x2a5f9e, pants: 0x3a4250, shoes: 0xf0f0f0 },
+  { skin: 0x6b4226, top: 0x1f8a4c, pants: 0x2a2e36, shoes: 0x2a2e36 },
+  { skin: 0xc79a6b, top: 0xc94f7c, pants: 0x5a4a3a, shoes: 0xf0f0f0 },
+  { skin: 0xa06a44, top: 0xf0e6d8, pants: 0x2a2e36, shoes: 0xd23c3c },
+];
+function mkNeighbor() { // sidewalk person; animation is driven by the view
+  if (rigReady()) {
+    const r = createRigged(pick(NEIGHBOR_FITS));
+    const g = r.group;
+    const working = Math.random() < 0.35;      // kneeling, busy with something
+    play(r, working ? 'Working' : 'Idle');
+    r._cur.time = rand(0, 2);                  // desync the loop phases
+    r.mixer.update(0);
+    g.userData.rig = r;
+    // the raised arm reads as POINTING at the fleeing robber ("there he goes!")
+    // — a happier fit for the fiction than the wave it started as
+    g.userData.wave = !working && Math.random() < 0.5;
+    g.add(blobShadow(0.7));
+    return g;
+  }
   const built = buildHumanoid({
     skin: pick([0x8d5a3b, 0x6b4226, 0xc79a6b, 0xa06a44]),
     outfit: pick([0x3bd6c6, 0xe8604c, 0xe0a020, 0x8e44ad, 0x2a5f9e]),
@@ -952,6 +980,24 @@ export function mkPoliceCar() {
 
 /* patrol officer — cartoon beat cop, strictly nonviolent chaser */
 export function mkOfficer() {
+  if (rigReady()) {
+    // rigged like the chase squad, so the bank-scene cops match them
+    const r = createRigged({ skin: pick([0x9a6a4a, 0x7a4a2f, 0xb98a63]), top: 0x1a2440, pants: 0x161c2c, shoes: 0x22252c });
+    const capG = new THREE.Group();
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.5),
+      new THREE.MeshStandardMaterial({ color: 0x2a3a6e, roughness: 0.8 }));
+    dome.scale.set(0.145, 0.085, 0.155); dome.position.y = 0.03; capG.add(dome);
+    capG.add(box(0.22, 0.025, 0.13, 0x1c2947, 0, 0.015, 0.15));
+    capG.add(box(0.05, 0.05, 0.012, 0xffd23c, 0, 0.02, 0.145));
+    attachToBone(r, 'Head', capG, new THREE.Vector3(0, 0.24, 0));
+    const g = r.group;
+    play(r, 'Idle');
+    r._cur.time = rand(0, 2);
+    r.mixer.update(0);
+    g.userData.rig = r;
+    g.add(blobShadow(1.0));
+    return g;
+  }
   const built = buildHumanoid({
     skin: pick([0x8d5a3b, 0x6b4226, 0xc79a6b, 0xa06a44]),
     outfit: 0x2a3a6e, pants: 0x1c2440, shoes: 0x14141a,
@@ -1324,6 +1370,7 @@ export function buildSegment(seg, opts) {
         const cop = mkOfficer();
         cop.position.set(o.x, 0, o.z);
         cop.rotation.y = Math.atan2(0 - o.x, 5 - o.z);          // turn toward the entrance
+        if (cop.userData.rig) (g.userData.rigs = g.userData.rigs || []).push(cop.userData.rig);
         g.add(cop);
       }
       g.userData.policeLights = lights;
@@ -1667,8 +1714,16 @@ function buildStreetDressing(g, seg, d, opts, dd) {
       else if (d.decor?.subway && roll < 0.58 && Math.random() < 0.3) { const su = mkSubwayEntrance(); su.position.set(side * (HALF + 1.8), 0.24, -d2); su.rotation.y = side > 0 ? Math.PI / 2 : -Math.PI / 2; g.add(su); }
       else if (roll < 0.62) { const car = mkParkedCar(); car.position.set(side * (HALF + 1.9), 0.06, -d2); car.rotation.y = (side > 0 ? 0 : Math.PI) + rand(-0.04, 0.04); g.add(car); }
       else if (roll < 0.72) { const be = mkBench(); be.position.set(side * (HALF + 1.7), 0.24, -d2); be.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2; g.add(be); }
-      else if (roll < 0.82) { const n = mkNeighbor(); n.position.set(side * (HALF + rand(1.2, 2.2)), 0.24, -d2); n.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2; g.userData.neighbors = g.userData.neighbors || []; g.userData.neighbors.push(n); g.add(n); }
-      else if (roll < 0.94) {  // kerb clutter in the band that used to be empty
+      else if (roll < 0.86) {   // widened once the people became worth looking at
+        const n = mkNeighbor(); n.position.set(side * (HALF + rand(1.2, 2.2)), 0.24, -d2);
+        n.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2;
+        if (n.userData.rig) {
+          (g.userData.rigs = g.userData.rigs || []).push(n.userData.rig);
+          if (n.userData.wave) (g.userData.wavers = g.userData.wavers || []).push(n.userData.rig);
+        } else { g.userData.neighbors = g.userData.neighbors || []; g.userData.neighbors.push(n); }
+        g.add(n);
+      }
+      else if (roll < 0.96) {  // kerb clutter in the band that used to be empty
         const c = pick([mkMailbox, mkTrashBags, mkNewsBox])();
         c.position.set(side * (HALF + rand(1.1, 1.8)), 0.24, -d2);
         c.rotation.y = rand(0, Math.PI * 2);
@@ -1869,6 +1924,13 @@ export function animateSegments(segs, time, party, runnerPos) {
     const g = seg.group; if (!g) continue;
     if (g.userData.neighbors) for (const n of g.userData.neighbors) {
       n.userData.anim.rotation.z = Math.sin(time * 5 + n.position.z) * 0.5 - 0.4;
+    }
+    // skinned bystanders: clips first, then the pointing arm layered over the
+    // clip — same post-mixer trick the runner uses for slides
+    if (g.userData.rigs) for (const r of g.userData.rigs) r.mixer.update(dt);
+    if (g.userData.wavers) for (const r of g.userData.wavers) {
+      const b = r.bones.RightArm;
+      if (b) b.rotation.z -= 1.7 + Math.sin(time * 6) * 0.4;
     }
     if (g.userData.pigeons && runnerPos) {
       _pl.copy(runnerPos); g.worldToLocal(_pl);
