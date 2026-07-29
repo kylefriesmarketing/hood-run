@@ -1397,8 +1397,85 @@ export function mkPowerup(kind) {
   return g;
 }
 
+/* ---------------- corridor safety ----------------
+   The generator loops the path around city blocks and only guarantees the
+   ROADS don't overlap — observed clearance between a junction and a later leg
+   is as little as ~2 units. So decorative mass has two rules:
+   1. At placement, big decor (junction rows, corner blocks, buildings, murals)
+      refuses to stand on ANY existing segment's corridor.
+   2. Loop legs that don't exist yet at placement time are handled in reverse:
+      every NEW segment sweeps the backdrop registry and deletes decor its
+      corridor now runs through.
+   Everything is axis-aligned (headings are multiples of π/2), so rects do. */
+const CORR_W = 3.8;                    // lane span + runner + wiggle
+const backdropReg = [];                // { mesh, owner } — swept by new segments
+const _sweepBox = new THREE.Box3();
+function segRect(s, w = CORR_W, ext = 8) {
+  const ex = s.ox + s.dx * s.len, ez = s.oz + s.dz * s.len;
+  // ⚠️ dx/dz come off sin/cos and the "zero" one is ±1e-16 — truthiness reads
+  // that as an x-heading AND a z-heading at once; compare against 0.5
+  const alongX = Math.abs(s.dx) > 0.5;
+  return {
+    x0: Math.min(s.ox, ex) - (alongX ? ext : w), x1: Math.max(s.ox, ex) + (alongX ? ext : w),
+    z0: Math.min(s.oz, ez) - (alongX ? w : ext), z1: Math.max(s.oz, ez) + (alongX ? w : ext),
+  };
+}
+function rectsOverlap(a, b, pen = 0.2) {
+  return Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0) > pen &&
+         Math.min(a.z1, b.z1) - Math.max(a.z0, b.z0) > pen;
+}
+function localRectToWorld(seg, lx0, lx1, lz0, lz1) {
+  const c = Math.cos(seg.ang), s = Math.sin(seg.ang);
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  for (const [x, z] of [[lx0, lz0], [lx0, lz1], [lx1, lz0], [lx1, lz1]]) {
+    const wx = seg.ox + x * c + z * s, wz = seg.oz - x * s + z * c;
+    x0 = Math.min(x0, wx); x1 = Math.max(x1, wx);
+    z0 = Math.min(z0, wz); z1 = Math.max(z1, wz);
+  }
+  return { x0, x1, z0, z1 };
+}
+function corridorClear(rect, segs, selfIndex) {
+  if (!segs) return true;
+  for (const s of segs) {
+    if (s.index === selfIndex) continue;
+    if (rectsOverlap(rect, segRect(s))) return false;
+  }
+  return true;
+}
+function registerBackdrop(mesh, ownerIndex) { backdropReg.push({ mesh, owner: ownerIndex }); mesh.userData.backdropOwner = ownerIndex; }
+/* test hook: is a given mesh registered, and what does the registry hold? */
+export function backdropDebug(mesh) {
+  return { size: backdropReg.length,
+    registered: mesh ? backdropReg.some(e => e.mesh === mesh || (mesh.parent && e.mesh === mesh.parent)) : null };
+}
+/* test hook: force a full sweep; returns how many entries were removed */
+export function sweepNow(segs) {
+  const before = backdropReg.length;
+  for (const s of segs) sweepBackdrops(s);
+  return before - backdropReg.length;
+}
+function sweepBackdrops(newSeg) {
+  for (let i = backdropReg.length - 1; i >= 0; i--) {
+    const e = backdropReg[i];
+    if (!e.mesh.parent) { backdropReg.splice(i, 1); continue; }  // its segment pruned
+    if (e.owner === newSeg.index) continue;   // never sweep your own backdrop
+    _sweepBox.setFromObject(e.mesh);
+    const r = segRect(newSeg);
+    if (Math.min(_sweepBox.max.x, r.x1) - Math.max(_sweepBox.min.x, r.x0) > 0.2 &&
+        Math.min(_sweepBox.max.z, r.z1) - Math.max(_sweepBox.min.z, r.z0) > 0.2) {
+      e.mesh.parent.remove(e.mesh);
+      disposeGroup(e.mesh);
+      backdropReg.splice(i, 1);
+    }
+  }
+}
+
 /* ---------------- segment construction ---------------- */
 export function buildSegment(seg, opts) {
+  // fresh run: the old world is torn down, so the registry starts clean too
+  if (seg.index === 0) backdropReg.length = 0;
+  // a new leg of the path claims its right of way (rule 2 above)
+  sweepBackdrops(seg);
   // opts: { district, first, alley, split, contrast, decorDensity }
   const dname = seg.alley ? seg.baseDistrict : seg.district;
   const d = DISTRICTS[dname] || DISTRICTS.block;
@@ -1483,41 +1560,52 @@ export function buildSegment(seg, opts) {
     } else {
       /* The wall you run TOWARD on every turn used to be one featureless brown
          slab — the most-stared-at surface in the game. Now it's a row of three
-         real facades with cornices, like the cross street it pretends to be. */
-      const texes = buildingTexes(seg.district);
-      const sideT = grainMat(new THREE.Color(d.brickset[0]).multiplyScalar(0.8).getHex(), 'sideWall');
-      const roofT = grainMat(new THREE.Color(d.brickset[0]).multiplyScalar(0.6).getHex(), 'roof');
-      const JB = makeBuilder();
-      for (let bi = 0; bi < 3; bi++) {
-        const bw = 10, bh = [13, 16, 12][bi], bx = (bi - 1) * 10;
-        const ft = pick(texes);
-        const fm = new THREE.MeshStandardMaterial({
-          map: ft, roughness: 0.92, bumpMap: ft.userData.bump || null, bumpScale: 1.4 });
-        const bld = new THREE.Mesh(BOX, [sideT, sideT, roofT, roofT, fm, sideT]);
-        bld.scale.set(bw, bh, 10); bld.position.set(bx, bh / 2, -L - 9);
-        g.add(bld);
-        const trim = new THREE.Color(d.brickset[0]).lerp(new THREE.Color(0xffffff), 0.2).getHex();
-        JB.box(bw + 0.6, 0.55, 10.5, bx, bh - 0.28, -L - 9, trim);         // cornice
-        JB.box(bw + 0.2, 1.0, 10.2, bx, bh + 0.5, -L - 9, new THREE.Color(d.brickset[0]).multiplyScalar(0.72).getHex());
+         real facades with cornices, like the cross street it pretends to be.
+         The row is one composite (rule 1/2: placed only if no leg of the path
+         runs through it, and deleted whole if a LATER loop leg does). */
+      if (corridorClear(localRectToWorld(seg, -15, 15, -L - 14, -L - 4), opts.segs, seg.index)) {
+        const texes = buildingTexes(seg.district);
+        const sideT = grainMat(new THREE.Color(d.brickset[0]).multiplyScalar(0.8).getHex(), 'sideWall');
+        const roofT = grainMat(new THREE.Color(d.brickset[0]).multiplyScalar(0.6).getHex(), 'roof');
+        const JB = makeBuilder();
+        const rowG = new THREE.Group();
+        for (let bi = 0; bi < 3; bi++) {
+          const bw = 10, bh = [13, 16, 12][bi], bx = (bi - 1) * 10;
+          const ft = pick(texes);
+          const fm = new THREE.MeshStandardMaterial({
+            map: ft, roughness: 0.92, bumpMap: ft.userData.bump || null, bumpScale: 1.4 });
+          const bld = new THREE.Mesh(BOX, [sideT, sideT, roofT, roofT, fm, sideT]);
+          bld.scale.set(bw, bh, 10); bld.position.set(bx, bh / 2, -L - 9);
+          rowG.add(bld);
+          const trim = new THREE.Color(d.brickset[0]).lerp(new THREE.Color(0xffffff), 0.2).getHex();
+          JB.box(bw + 0.6, 0.55, 10.5, bx, bh - 0.28, -L - 9, trim);         // cornice
+          JB.box(bw + 0.2, 1.0, 10.2, bx, bh + 0.5, -L - 9, new THREE.Color(d.brickset[0]).multiplyScalar(0.72).getHex());
+        }
+        const jm = new THREE.Mesh(JB.build(), detailMaterial());
+        jm.userData.ownGeo = true; rowG.add(jm);
+        g.add(rowG);
+        registerBackdrop(rowG, seg.index);
       }
-      const jm = new THREE.Mesh(JB.build(), detailMaterial());
-      jm.userData.ownGeo = true; g.add(jm);
     }
     const arrow = new THREE.Mesh(new THREE.PlaneGeometry(5, 2.5), new THREE.MeshBasicMaterial({ map: arrowTexD(seg.exit, accent) }));
     arrow.position.set(0, 2.6, -L - 3.9); g.add(arrow);
     if (!isRoof) {
       const blockSide = seg.exit === 'L' ? 1 : -1;
-      // corner block wears a facade toward the road instead of flat mustard
-      const texes = buildingTexes(seg.district);
-      const cf = pick(texes);
-      const cfm = new THREE.MeshStandardMaterial({
-        map: cf, roughness: 0.92, bumpMap: cf.userData.bump || null, bumpScale: 1.4 });
-      const cside = grainMat(new THREE.Color(d.brickset[0]).multiplyScalar(0.78).getHex(), 'sideWall');
-      const cb = new THREE.Mesh(BOX, [cside, cside, cside, cside, cfm, cside]);
-      cb.scale.set(12, 12, 12);
-      cb.position.set(blockSide * (HALF + SIDE_W + 6), 6, -L);
-      cb.rotation.y = blockSide > 0 ? -Math.PI / 2 : Math.PI / 2;   // face the road
-      g.add(cb);
+      const cbx = blockSide * (HALF + SIDE_W + 6);
+      if (corridorClear(localRectToWorld(seg, cbx - 6, cbx + 6, -L - 6, -L + 6), opts.segs, seg.index)) {
+        // corner block wears a facade toward the road instead of flat mustard
+        const texes = buildingTexes(seg.district);
+        const cf = pick(texes);
+        const cfm = new THREE.MeshStandardMaterial({
+          map: cf, roughness: 0.92, bumpMap: cf.userData.bump || null, bumpScale: 1.4 });
+        const cside = grainMat(new THREE.Color(d.brickset[0]).multiplyScalar(0.78).getHex(), 'sideWall');
+        const cb = new THREE.Mesh(BOX, [cside, cside, cside, cside, cfm, cside]);
+        cb.scale.set(12, 12, 12);
+        cb.position.set(cbx, 6, -L);
+        cb.rotation.y = blockSide > 0 ? -Math.PI / 2 : Math.PI / 2;   // face the road
+        g.add(cb);
+        registerBackdrop(cb, seg.index);
+      }
     }
   } else if (isRoof) {
     // straight roof exit: nothing to draw, the deck just runs on
@@ -1525,7 +1613,11 @@ export function buildSegment(seg, opts) {
     for (const s of [-1, 1]) {
       const stub = new THREE.Mesh(new THREE.PlaneGeometry(12, ROAD_W), new THREE.MeshStandardMaterial({ color: d.road }));
       stub.rotation.x = -Math.PI / 2; stub.position.set(s * 10, 0.008, -L); stub.userData.ownGeo = true; g.add(stub);
-      g.add(box(12, 13, 12, 0x7a6448, s * 13, 6.5, -L - 11));
+      if (corridorClear(localRectToWorld(seg, s * 13 - 6, s * 13 + 6, -L - 17, -L - 5), opts.segs, seg.index)) {
+        const fb = box(12, 13, 12, 0x7a6448, s * 13, 6.5, -L - 11);
+        g.add(fb);
+        registerBackdrop(fb, seg.index);
+      }
     }
   }
   // alley gate telegraph on the segment BEFORE a split
@@ -1731,7 +1823,8 @@ function buildStreetDressing(g, seg, d, opts, dd) {
       const w = rand(9, 15);
       const roll = Math.random();
       if (dpos + w > endD) break;                                    // no partial building over the corner
-      if (roll < 0.1 * dd && dpos + 8 < endD && d.decor?.murals) {   // mural lot
+      if (roll < 0.1 * dd && dpos + 8 < endD && d.decor?.murals &&
+          corridorClear(localRectToWorld(seg, side > 0 ? WALL_X : -(WALL_X + 1), side > 0 ? WALL_X + 1 : -WALL_X, -(dpos + 8), -dpos), opts.segs, seg.index)) {   // mural lot
         const wall = new THREE.Mesh(new THREE.PlaneGeometry(8, 3.4), new THREE.MeshStandardMaterial({ map: muralTex() }));
         wall.position.set(side * (WALL_X + 0.28), 1.7, -(dpos + 4));
         wall.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2;
@@ -1741,6 +1834,13 @@ function buildStreetDressing(g, seg, d, opts, dd) {
         dpos += 9;
       } else {
         const [h0, h1] = d.buildingH, h = rand(h0, h1), depth = 10;
+        /* corridor rule 1: a loop leg of the path may already run through this
+           strip — leave the lot empty rather than stand a building on a road */
+        const x0 = side > 0 ? WALL_X : -(WALL_X + depth);
+        if (!corridorClear(localRectToWorld(seg, x0, x0 + depth, -(dpos + w), -dpos), opts.segs, seg.index)) {
+          dpos += w + rand(0, 2);
+          continue;
+        }
         /* Only the road-facing face (+z) carries the storefront texture. The
            other five used one universal mustard, so standing beside a building
            filled the screen with a flat beige slab. Tint them from the
@@ -1765,6 +1865,9 @@ function buildStreetDressing(g, seg, d, opts, dd) {
            w (9..15), which left ragged gaps between neighbours. */
         bld.scale.set(w, h, depth);
         g.add(bld);
+        // corridor rule 2: if a later loop leg claims this ground, the sweep
+        // removes the building (its merged relief stays — thin, acceptable)
+        registerBackdrop(bld, seg.index);
         addBuildingDetail(B, side, dpos, w, h, depth, d, faceTex.userData.layout);
         addFacadeRelief(B, faceTex.userData.layout, side, dpos, w, h);
         if (Math.random() < 0.25 * dd && !d.decor?.glass) { const fe = mkFireEscape(); fe.position.set(side * (WALL_X - 0.5), 0, -(dpos + w / 2)); fe.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2; g.add(fe); }
@@ -2010,9 +2113,12 @@ function buildAlleyDressing(g, seg, d, opts) {
 
 /* view-time animation of per-segment decor */
 const _pl = new THREE.Vector3();   // runner in segment-local space, reused
-let _lastAnimT = 0;
+let _lastAnimT = 0, _sweepTick = 0;
 export function animateSegments(segs, time, party, runnerPos) {
   const dt = Math.max(0, Math.min(0.1, time - _lastAnimT)); _lastAnimT = time;
+  // belt-and-suspenders for the corridor rules: creation-order corners can let
+  // a backdrop and a loop leg coexist briefly — this catches any straggler
+  if ((++_sweepTick % 120) === 0) for (const s of segs) sweepBackdrops(s);
   for (const seg of segs) {
     const g = seg.group; if (!g) continue;
     if (g.userData.neighbors) for (const n of g.userData.neighbors) {

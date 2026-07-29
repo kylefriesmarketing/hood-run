@@ -208,6 +208,24 @@ sun/wet/skyline, poles/wires/signals, pigeons/steam/clutter, rigged Jay +
 officers + bystanders (bank cops + sidewalk crowd), arrest animation, closet
 turntable. Zero known console errors; memory flat.
 
+⚠️ CORRIDOR SAFETY (v23) — "buildings in the road", root-caused: the
+generator LOOPS the path around city blocks (R,L,L,L) and only guarantees
+the ROADS don't overlap (observed clearance ~2 units), so decor placed by
+one segment (junction backdrop rows, corner blocks, straight-exit flank
+blocks, ordinary buildings) could stand on a LATER leg's corridor. Fix in
+world.js: (1) corridorClear() placement checks against every existing
+segment's rect; (2) a backdrop registry swept by each NEW segment
+(sweepBackdrops in buildSegment) for loop legs that didn't exist at
+placement time; (3) a periodic sweep in animateSegments as backstop.
+Three traps inside the fix itself: seg dx/dz are sin/cos results whose
+"zero" is ±1e-16 — TRUTHY, so axis checks must compare |dx| > 0.5; the
+registry must RESET at run start (seg.index===0) — stale entries keep
+their detached parents so a parent!=null GC check never drops them; and
+swept ordinary buildings leave their merged relief floating (thin,
+accepted). Detector: sample worldPos centerline every 2m across live
+segs, flag building-scale boxes whose AABB penetrates >1.5 both axes.
+Baseline 33 offenders/8 seeds -> 0/10 seeds.
+
 ENDGAME PRESENTATION (v21): arrest cam — during the 1.15s crashed window
 (game.js dieT, the whole move must fit inside it) the camera ease-out
 orbits ~70° around Jay from the exact chase position (no cut) while

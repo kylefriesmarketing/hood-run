@@ -34,7 +34,10 @@ const laneC = l => l * LANE_W;
 
 /* ---------------- mesh lifecycle callbacks ---------------- */
 function segOpts(seg, first) {
-  return { district: seg.district, first, decorDensity, contrast: UI.highContrast() };
+  // segs: the live path, so decor placement can refuse to stand on ANY leg of
+  // it — the generator loops the path around city blocks, and a junction's
+  // backdrop can otherwise end up in the middle of a later street
+  return { district: seg.district, first, decorDensity, contrast: UI.highContrast(), segs: GAME.G ? GAME.G.segs : null };
 }
 function meshCb(kind, item, seg, vinfo) {
   const G = GAME.G;
