@@ -15,6 +15,7 @@ const irand = (a, b) => Math.floor(rand(a, b + 1));
 
 /* ---------------- boot ---------------- */
 let hemi, sun, skyGroup, groundPlane, skyDome, pmrem, envScene, envDome, envRT = null;
+let skyline = null, skylineMat = null;   // distant tower ring, tinted per district
 
 /* rebake the environment from the current sky gradient */
 function refreshEnv() {
@@ -120,12 +121,49 @@ export function initWorld(canvas) {
   groundPlane = new THREE.Mesh(new THREE.PlaneGeometry(520, 520), new THREE.MeshStandardMaterial({ color: 0x6b7a5f }));
   groundPlane.rotation.x = -Math.PI / 2; groundPlane.position.y = -0.06;
   groundPlane.receiveShadow = true; scene.add(groundPlane);
+
+  /* ---- distant skyline ring ----
+     A ring of tower silhouettes at r 95–130 — inside the fog band, so each
+     district's haze half-swallows them. Translates WITH the camera (zero
+     parallax = reads as miles away) and never rotates. One merged mesh.
+     Lit windows come from an emissive map so setLights can turn the city's
+     lights up as the districts get darker. */
+  {
+    const wc = document.createElement('canvas'); wc.width = 48; wc.height = 64;
+    const wg = wc.getContext('2d');
+    wg.fillStyle = '#000'; wg.fillRect(0, 0, 48, 64);
+    wg.fillStyle = '#fff';
+    for (let y = 4; y < 60; y += 6) for (let x = 4; x < 44; x += 6)
+      if (Math.random() < 0.34) wg.fillRect(x, y, 3, 3);
+    const wtex = markShared(new THREE.CanvasTexture(wc));
+    skylineMat = new THREE.MeshStandardMaterial({
+      color: 0x3a4050, vertexColors: true, roughness: 0.95, metalness: 0,
+      emissive: 0xffd9a0, emissiveMap: markShared(wtex), emissiveIntensity: 0.15,
+    });
+    skylineMat.__shared = true;
+    const B = makeBuilder();
+    for (let i = 0; i < 26; i++) {
+      const a = (i / 26) * Math.PI * 2 + rand(-0.06, 0.06);
+      const r = rand(95, 130);
+      const w = rand(9, 19), h = rand(16, 44), dp = rand(7, 12);
+      const shade = 0.82 + Math.random() * 0.36;      // slab-to-slab variance
+      const col = new THREE.Color(0xffffff).multiplyScalar(shade).getHex();
+      const x = Math.cos(a) * r, z = Math.sin(a) * r;
+      B.box(w, h, dp, x, h / 2, z, col, { ry: -a + Math.PI / 2 });
+      B.box(w * 0.8, 0.8, dp * 0.8, x, h + 0.4, z, col, { ry: -a + Math.PI / 2 });  // parapet cap
+      if (Math.random() < 0.4)                        // rooftop tank / bulkhead
+        B.box(2.2, rand(1.5, 3), 2.2, x + rand(-2, 2), h + 1.4, z + rand(-2, 2), col);
+    }
+    skyline = new THREE.Mesh(B.build(), skylineMat);
+    scene.add(skyline);
+  }
   return { scene, camera, renderer };
 }
 export function trackView(px, pz) {
   groundPlane.position.set(px, -0.06, pz);
   skyGroup.position.set(px, 0, pz);
   skyDome.position.set(px, 0, pz);        // dome is infinite — keep it centred on the view
+  if (skyline) skyline.position.set(px, 0, pz);  // translate only: zero parallax = far away
   /* Carry the sun (and its shadow frustum) along with the player. The offset is
      deliberately steep: shadow length is height * (xOffset/yOffset), so a low
      sun threw 15-tall buildings clear across the road and put the whole play
@@ -152,21 +190,30 @@ export function applyDistrict(name, immediate) {
     hemiSky: new THREE.Color(d.hemi[0]), hemiGnd: new THREE.Color(d.hemi[1]), hemiI: d.hemi[2],
     sunC: new THREE.Color(d.sun[0]), sunI: d.sun[1], ground: new THREE.Color(d.side).multiplyScalar(0.55),
     sunOff: new THREE.Vector3(...(d.sunOff || [-12, 46, 15])),
+    winLit: d.windowLit ?? 0.1,
   };
   if (immediate) { setLights(to); lightLerp.t = 1; lightLerp.to = to; refreshEnv(); return; }
   lightLerp.from = snapLights(); lightLerp.to = to; lightLerp.t = 0;
 }
 const curSky = new THREE.Color(0x9fc7e8);      // drives the dome gradient
 const curSunOff = new THREE.Vector3(-12, 46, 15);  // read every frame by followCam
+let curWinLit = 0.1;
 function snapLights() {
   return { sky: curSky.clone(), fog: scene.fog.color.clone(), fogNear: scene.fog.near, fogFar: scene.fog.far,
     hemiSky: hemi.color.clone(), hemiGnd: hemi.groundColor.clone(), hemiI: hemi.intensity,
     sunC: sun.color.clone(), sunI: sun.intensity, ground: groundPlane.material.color.clone(),
-    sunOff: curSunOff.clone() };
+    sunOff: curSunOff.clone(), winLit: curWinLit };
 }
 function setLights(v) {
   curSky.copy(v.sky);
   if (v.sunOff) curSunOff.copy(v.sunOff);
+  if (skylineMat && v.winLit !== undefined) {
+    curWinLit = v.winLit;
+    // silhouettes a shade darker than the fog they stand in, windows brighter
+    // as the district darkens — nightmarket glows, midday block barely shows
+    skylineMat.color.copy(v.fog).multiplyScalar(0.62);
+    skylineMat.emissiveIntensity = 0.1 + curWinLit * 1.6;
+  }
   scene.fog.color.copy(v.fog); scene.fog.near = v.fogNear; scene.fog.far = v.fogFar;
   // shadowed surfaces are lit by the hemisphere alone, so lift it to stop the
   // street canyon going muddy now that buildings actually cast
@@ -184,7 +231,7 @@ export function updateLights(dt) {
   lightLerp.t = Math.min(1, lightLerp.t + dt / 2.5);
   const a = lightLerp.from, b = lightLerp.to, t = lightLerp.t, out = {};
   for (const k of ['sky', 'fog', 'hemiSky', 'hemiGnd', 'sunC', 'ground']) out[k] = a[k].clone().lerp(b[k], t);
-  for (const k of ['fogNear', 'fogFar', 'hemiI', 'sunI']) out[k] = a[k] + (b[k] - a[k]) * t;
+  for (const k of ['fogNear', 'fogFar', 'hemiI', 'sunI', 'winLit']) out[k] = a[k] + (b[k] - a[k]) * t;
   out.sunOff = a.sunOff.clone().lerp(b.sunOff, t);
   setLights(out);
   if (lightLerp.t >= 1) refreshEnv();     // rebake IBL once the new sky settles
@@ -626,6 +673,47 @@ function mkStreetlight() {
   g.add(box(1.4, 0.1, 0.12, 0x3a4048, -0.65, 5.15, 0));
   g.add(box(0.5, 0.16, 0.3, 0, -1.25, 5.05, 0, new THREE.MeshBasicMaterial({ color: 0xf2ede0 })));
   return g;
+}
+/* corner signal: pole + arm reaching over the kerb, head facing the runner.
+   The light is ALWAYS green in his direction — Jay has never once stopped. */
+function mkTrafficLight(dir = -1) {
+  // dir: which local-x way the arm reaches (toward the road); the lamp face
+  // always looks +z at the oncoming runner, so no yaw is ever needed
+  const g = new THREE.Group();
+  g.add(box(0.14, 5.4, 0.14, 0x2c3036, 0, 2.7, 0));
+  g.add(box(2.6, 0.12, 0.12, 0x2c3036, dir * 1.25, 5.3, 0));
+  const head = new THREE.Group(); head.position.set(dir * 2.45, 4.85, 0);
+  head.add(box(0.34, 0.95, 0.3, 0x22262c, 0, 0, 0));
+  const lamp = (col, y, lit) => {
+    const m = new THREE.Mesh(new THREE.CircleGeometry(0.1, 10),
+      new THREE.MeshBasicMaterial({ color: col }));
+    m.position.set(0, y, 0.16); if (!lit) m.material.color.multiplyScalar(0.22);
+    head.add(m);
+  };
+  lamp(0xff4444, 0.3, false); lamp(0xffc23c, 0, false); lamp(0x51ff6a, -0.3, true);
+  g.add(head);
+  return g;
+}
+/* utility pole with a crossarm; wires are strung by the caller, span-aware */
+function addUtilityPole(B, x, z) {
+  const wood = 0x5c4a38, dk = 0x3a3026;
+  B.box(0.2, 7.4, 0.2, x, 3.7, z, wood);
+  B.box(1.5, 0.14, 0.14, x, 6.9, z, dk);
+  B.box(0.06, 0.14, 0.06, x - 0.55, 7.03, z, 0x8a8f96);   // insulators
+  B.box(0.06, 0.14, 0.06, x, 7.03, z, 0x8a8f96);
+  B.box(0.06, 0.14, 0.06, x + 0.55, 7.03, z, 0x8a8f96);
+}
+/* one sagging wire between two poles as four tilted thin boxes on a parabola */
+function addWireSpan(B, x, y, z0, z1) {
+  const n = 4, sag = 0.55, col = 0x1c1f24;
+  for (let i = 0; i < n; i++) {
+    const t0 = i / n, t1 = (i + 1) / n;
+    const za = z0 + (z1 - z0) * t0, zb = z0 + (z1 - z0) * t1;
+    const ya = y - sag * Math.sin(Math.PI * t0), yb = y - sag * Math.sin(Math.PI * t1);
+    const len = Math.hypot(zb - za, yb - ya);
+    // box +z after rx θ points to (0, -sinθ, cosθ), so θ = atan2(-dy, dz)
+    B.box(0.035, 0.035, len, x, (ya + yb) / 2, (za + zb) / 2, col, { rx: Math.atan2(-(yb - ya), zb - za) });
+  }
 }
 function mkHydrant() {
   const g = new THREE.Group(); const m = cmat(0xd23c3c);
@@ -1179,13 +1267,43 @@ export function buildSegment(seg, opts) {
       g.add(box(30, 1.3, 1.0, 0x8a8076, 0, 0.65, -L - 3));
       g.add(box(30, 0.18, 1.3, 0xa39a8e, 0, 1.35, -L - 3));
     } else {
-      g.add(box(30, 15, 10, 0x8a7050, 0, 7.5, -L - 4 - 5));
+      /* The wall you run TOWARD on every turn used to be one featureless brown
+         slab — the most-stared-at surface in the game. Now it's a row of three
+         real facades with cornices, like the cross street it pretends to be. */
+      const texes = buildingTexes(seg.district);
+      const sideT = grainMat(new THREE.Color(d.brickset[0]).multiplyScalar(0.8).getHex(), 'sideWall');
+      const roofT = grainMat(new THREE.Color(d.brickset[0]).multiplyScalar(0.6).getHex(), 'roof');
+      const JB = makeBuilder();
+      for (let bi = 0; bi < 3; bi++) {
+        const bw = 10, bh = [13, 16, 12][bi], bx = (bi - 1) * 10;
+        const ft = pick(texes);
+        const fm = new THREE.MeshStandardMaterial({
+          map: ft, roughness: 0.92, bumpMap: ft.userData.bump || null, bumpScale: 1.4 });
+        const bld = new THREE.Mesh(BOX, [sideT, sideT, roofT, roofT, fm, sideT]);
+        bld.scale.set(bw, bh, 10); bld.position.set(bx, bh / 2, -L - 9);
+        g.add(bld);
+        const trim = new THREE.Color(d.brickset[0]).lerp(new THREE.Color(0xffffff), 0.2).getHex();
+        JB.box(bw + 0.6, 0.55, 10.5, bx, bh - 0.28, -L - 9, trim);         // cornice
+        JB.box(bw + 0.2, 1.0, 10.2, bx, bh + 0.5, -L - 9, new THREE.Color(d.brickset[0]).multiplyScalar(0.72).getHex());
+      }
+      const jm = new THREE.Mesh(JB.build(), detailMaterial());
+      jm.userData.ownGeo = true; g.add(jm);
     }
     const arrow = new THREE.Mesh(new THREE.PlaneGeometry(5, 2.5), new THREE.MeshBasicMaterial({ map: arrowTexD(seg.exit, accent) }));
     arrow.position.set(0, 2.6, -L - 3.9); g.add(arrow);
     if (!isRoof) {
       const blockSide = seg.exit === 'L' ? 1 : -1;
-      g.add(box(12, 12, 12, 0x7a6448, blockSide * (HALF + SIDE_W + 6), 6, -L));
+      // corner block wears a facade toward the road instead of flat mustard
+      const texes = buildingTexes(seg.district);
+      const cf = pick(texes);
+      const cfm = new THREE.MeshStandardMaterial({
+        map: cf, roughness: 0.92, bumpMap: cf.userData.bump || null, bumpScale: 1.4 });
+      const cside = grainMat(new THREE.Color(d.brickset[0]).multiplyScalar(0.78).getHex(), 'sideWall');
+      const cb = new THREE.Mesh(BOX, [cside, cside, cside, cside, cfm, cside]);
+      cb.scale.set(12, 12, 12);
+      cb.position.set(blockSide * (HALF + SIDE_W + 6), 6, -L);
+      cb.rotation.y = blockSide > 0 ? -Math.PI / 2 : Math.PI / 2;   // face the road
+      g.add(cb);
     }
   } else if (isRoof) {
     // straight roof exit: nothing to draw, the deck just runs on
@@ -1455,6 +1573,16 @@ function buildStreetDressing(g, seg, d, opts, dd) {
     for (let d2 = 10 + (side > 0 ? 8 : 0); d2 < propEnd; d2 += 17) {
       const sl = mkStreetlight(); sl.position.set(side * (HALF + 0.9), 0.24, -d2); sl.rotation.y = side > 0 ? 0 : Math.PI; g.add(sl);
     }
+    // utility poles + power lines on the left kerb, interleaved between the
+    // streetlights — the sagging wires are half the reason a street reads urban
+    if (side < 0 && !d.decor?.glass) {
+      const px2 = side * (HALF + SIDE_W - 0.35);
+      const poleZ = [];
+      for (let d2 = 18; d2 < propEnd; d2 += 17) { addUtilityPole(B, px2, -d2); poleZ.push(-d2); }
+      for (let i = 0; i + 1 < poleZ.length; i++)
+        for (const xo of [-0.55, 0, 0.55])
+          addWireSpan(B, px2 + xo, 6.95, poleZ[i], poleZ[i + 1]);
+    }
     for (let d2 = rand(8, 20); d2 < propEnd; d2 += rand(13, 24) / dd) {
       const roll = Math.random();
       if (d.decor?.trees && roll < 0.3) { const t = mkTree(); t.position.set(side * (HALF + 1.7), 0.24, -d2); g.add(t); }
@@ -1490,6 +1618,15 @@ function buildStreetDressing(g, seg, d, opts, dd) {
       g.add(b); bulbs.push(b);
     }
     g.userData.bulbs = bulbs;
+  }
+
+  // traffic signals where the street meets the junction, arms over the kerb
+  if (!seg.alley) {
+    for (const s of (seg.exit === 'S' ? [-1, 1] : [seg.exit === 'L' ? 1 : -1])) {
+      const tl = mkTrafficLight(-s);        // arm reaches over the road
+      tl.position.set(s * (HALF + 0.7), 0.24, -(L - 4));
+      g.add(tl);
+    }
   }
 
   // emit the whole block's architectural detail as a single mesh
