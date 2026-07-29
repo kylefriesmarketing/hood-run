@@ -715,6 +715,80 @@ function addWireSpan(B, x, y, z0, z1) {
     B.box(0.035, 0.035, len, x, (ya + yb) / 2, (za + zb) / 2, col, { rx: Math.atan2(-(yb - ya), zb - za) });
   }
 }
+/* city pigeon, modelled facing +z like every other creature here */
+function mkPigeon() {
+  const g = new THREE.Group();
+  const grey = cmat(0x8f939c), dk = cmat(0x5c6068);
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.11, 8, 6), grey);
+  body.scale.set(0.9, 0.8, 1.25); body.position.y = 0.12; g.add(body);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.055, 8, 6), dk);
+  head.position.set(0, 0.24, 0.09); g.add(head);
+  g.add(box(0.025, 0.02, 0.05, 0xe0a03c, 0, 0.235, 0.15));            // beak
+  const tail = box(0.09, 0.02, 0.12, 0x6c7078, 0, 0.14, -0.16);
+  tail.rotation.x = -0.5; g.add(tail);
+  const wings = [];
+  for (const s of [-1, 1]) {
+    const w = box(0.16, 0.015, 0.14, 0x7c8088, s * 0.1, 0.16, -0.01);
+    w.rotation.z = s * 0.15; g.add(w); wings.push(w);
+  }
+  g.userData = { head, wings };
+  return g;
+}
+/* steam grate: dark grill in the gutter + three rising wisps */
+let wispTex = null;
+function mkSteamGrate() {
+  if (!wispTex) {
+    const c = document.createElement('canvas'); c.width = c.height = 32;
+    const g2 = c.getContext('2d');
+    const grad = g2.createRadialGradient(16, 16, 2, 16, 16, 15);
+    grad.addColorStop(0, 'rgba(255,255,255,.7)'); grad.addColorStop(1, 'rgba(255,255,255,0)');
+    g2.fillStyle = grad; g2.fillRect(0, 0, 32, 32);
+    wispTex = markShared(new THREE.CanvasTexture(c));
+  }
+  const g = new THREE.Group();
+  const grate = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.7), new THREE.MeshStandardMaterial({
+    map: markShared(texCache.grate || (texCache.grate = tex(32, 22, (gg, w, h) => {
+      gg.fillStyle = '#26282e'; gg.fillRect(0, 0, w, h);
+      gg.fillStyle = '#101216'; for (let x = 3; x < w; x += 5) gg.fillRect(x, 2, 2, h - 4);
+    }))), roughness: 0.9 }));
+  grate.rotation.x = -Math.PI / 2; grate.position.y = 0.02; g.add(grate);
+  const wisps = [];
+  for (let i = 0; i < 3; i++) {
+    const m = new THREE.Sprite(new THREE.SpriteMaterial({ map: wispTex, transparent: true, opacity: 0, depthWrite: false }));
+    m.scale.setScalar(0.7); m.position.y = 0.3; g.add(m);
+    wisps.push({ m, t: i / 3 });                 // staggered phases
+  }
+  g.userData.wisps = wisps;
+  return g;
+}
+function mkMailbox() {
+  const g = new THREE.Group(), blue = cmat(0x2a4a8e);
+  g.add(box(0.5, 0.5, 0.4, 0x2a4a8e, 0, 0.62, 0));
+  const top = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.5, 10, 1, false, 0, Math.PI), blue);
+  top.rotation.z = Math.PI / 2; top.position.y = 0.87; g.add(top);
+  g.add(box(0.34, 0.05, 0.02, 0x1a2f5e, 0, 0.78, 0.21));              // slot
+  g.add(box(0.4, 0.38, 0.3, 0x233c74, 0, 0.19, 0));                   // pedestal
+  return g;
+}
+function mkTrashBags() {
+  const g = new THREE.Group(), bag = cmat(0x2c2e34, { roughness: 0.45 });
+  for (let i = 0; i < 3; i++) {
+    const b = new THREE.Mesh(new THREE.SphereGeometry(rand(0.22, 0.3), 8, 6), bag);
+    b.scale.y = 0.85; b.position.set(rand(-0.35, 0.35), 0.2, rand(-0.3, 0.3));
+    g.add(b);
+    g.add(box(0.08, 0.1, 0.08, 0x44464c, b.position.x, 0.44, b.position.z)); // tied knot
+  }
+  return g;
+}
+function mkNewsBox() {
+  const g = new THREE.Group();
+  const col = pick([0xd23c3c, 0x2a6a8e, 0xd0aa2a]);
+  g.add(box(0.44, 0.6, 0.4, col, 0, 0.56, 0));
+  g.add(box(0.34, 0.3, 0.02, 0xdce4ea, 0, 0.64, 0.21));               // window
+  g.add(box(0.44, 0.08, 0.4, new THREE.Color(col).multiplyScalar(0.7).getHex(), 0, 0.9, 0));
+  for (const s of [-1, 1]) g.add(box(0.06, 0.26, 0.06, 0x3a3e44, s * 0.16, 0.13, 0));
+  return g;
+}
 function mkHydrant() {
   const g = new THREE.Group(); const m = cmat(0xd23c3c);
   const body = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, 0.62, 10), m); body.position.y = 0.31; g.add(body);
@@ -1594,6 +1668,32 @@ function buildStreetDressing(g, seg, d, opts, dd) {
       else if (roll < 0.62) { const car = mkParkedCar(); car.position.set(side * (HALF + 1.9), 0.06, -d2); car.rotation.y = (side > 0 ? 0 : Math.PI) + rand(-0.04, 0.04); g.add(car); }
       else if (roll < 0.72) { const be = mkBench(); be.position.set(side * (HALF + 1.7), 0.24, -d2); be.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2; g.add(be); }
       else if (roll < 0.82) { const n = mkNeighbor(); n.position.set(side * (HALF + rand(1.2, 2.2)), 0.24, -d2); n.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2; g.userData.neighbors = g.userData.neighbors || []; g.userData.neighbors.push(n); g.add(n); }
+      else if (roll < 0.94) {  // kerb clutter in the band that used to be empty
+        const c = pick([mkMailbox, mkTrashBags, mkNewsBox])();
+        c.position.set(side * (HALF + rand(1.1, 1.8)), 0.24, -d2);
+        c.rotation.y = rand(0, Math.PI * 2);
+        g.add(c);
+      }
+    }
+    // a flock pecking on the sidewalk — scatters when Jay closes in
+    if (side < 0 && Math.random() < 0.55 * dd) {
+      const flock = [];
+      const fz = -rand(L * 0.25, L * 0.75), fx = side * (HALF + rand(0.8, 1.8));
+      for (let i = 0; i < 2 + Math.floor(Math.random() * 3); i++) {
+        const p = mkPigeon();
+        p.position.set(fx + rand(-0.9, 0.9), 0.24, fz + rand(-0.9, 0.9));
+        p.rotation.y = rand(0, Math.PI * 2);
+        p.userData.state = 'peck'; p.userData.vel = null; p.userData.ph = rand(0, 9);
+        g.add(p); flock.push(p);
+      }
+      g.userData.pigeons = flock;
+    }
+    // steam grate in the gutter (skip the sunny market — it reads wrong there)
+    if (side > 0 && seg.district !== 'market' && Math.random() < 0.45 * dd) {
+      const sg = mkSteamGrate();
+      sg.position.set(side * (HALF - 0.7), 0.02, -rand(L * 0.3, L * 0.7));
+      g.add(sg);
+      (g.userData.grates = g.userData.grates || []).push(sg);
     }
   }
   // paper lanterns strung across the night market
@@ -1761,11 +1861,44 @@ function buildAlleyDressing(g, seg, d, opts) {
 }
 
 /* view-time animation of per-segment decor */
-export function animateSegments(segs, time, party) {
+const _pl = new THREE.Vector3();   // runner in segment-local space, reused
+let _lastAnimT = 0;
+export function animateSegments(segs, time, party, runnerPos) {
+  const dt = Math.max(0, Math.min(0.1, time - _lastAnimT)); _lastAnimT = time;
   for (const seg of segs) {
     const g = seg.group; if (!g) continue;
     if (g.userData.neighbors) for (const n of g.userData.neighbors) {
       n.userData.anim.rotation.z = Math.sin(time * 5 + n.position.z) * 0.5 - 0.4;
+    }
+    if (g.userData.pigeons && runnerPos) {
+      _pl.copy(runnerPos); g.worldToLocal(_pl);
+      for (const p of g.userData.pigeons) {
+        const u = p.userData;
+        if (u.state === 'peck') {
+          u.head.position.y = 0.24 - Math.max(0, Math.sin(time * 6 + u.ph)) * 0.1;   // pecking bob
+          const dx = _pl.x - p.position.x, dz = _pl.z - p.position.z;
+          if (dx * dx + dz * dz < 49) {                    // Jay within 7 — burst!
+            u.state = 'fly';
+            const a = Math.atan2(-dx, -dz) + rand(-0.5, 0.5);
+            u.vel = new THREE.Vector3(Math.sin(a) * rand(3, 5), rand(4.5, 6.5), Math.cos(a) * rand(3, 5));
+            p.rotation.y = a + Math.PI;                    // face the way it flees (+z forward)
+          }
+        } else if (u.state === 'fly') {
+          p.position.addScaledVector(u.vel, dt);
+          u.vel.y += 2.2 * dt;                             // climbing away, not ballistic
+          for (const w of u.wings) w.rotation.z = Math.sign(w.position.x) * (0.2 + Math.sin(time * 40 + u.ph) * 0.9);
+          if (p.position.y > 14) { p.visible = false; u.state = 'gone'; }
+        }
+      }
+    }
+    if (g.userData.grates) for (const sg of g.userData.grates) {
+      for (const w of sg.userData.wisps) {
+        w.t += dt * 0.45; if (w.t > 1) w.t -= 1;
+        w.m.position.y = 0.2 + w.t * 2.4;
+        w.m.position.x = Math.sin((w.t + time * 0.1) * 5) * 0.25;
+        w.m.scale.setScalar(0.5 + w.t * 1.1);
+        w.m.material.opacity = 0.3 * Math.sin(Math.PI * w.t);
+      }
     }
     if (g.userData.bulbs) for (let i = 0; i < g.userData.bulbs.length; i++) {
       const b = g.userData.bulbs[i];
@@ -1789,7 +1922,6 @@ export function animateSegments(segs, time, party) {
       const s = party ? 1 + 0.35 * Math.max(0, Math.sin(time * 7 + i * 0.9)) : 1;
       ls.scale.set(1, s, s);
     }
-    g.traverse?.call?.(g, () => {});                 // no-op guard
   }
 }
 

@@ -397,8 +397,8 @@ function updateView(dt) {
   for (const l of G.letters) if (l.mesh && !l.taken) { l.mesh.rotation.y += dt * 2; l.mesh.position.y = 1.1 + Math.sin(viewTime * 3 + l.d) * 0.14; }
   for (const p of G.powsList) if (p.mesh && !p.taken) { p.mesh.rotation.y += dt * 2; p.mesh.position.y = 1.1 + Math.sin(viewTime * 3 + p.d) * 0.14; }
 
-  /* decor animation + party pulse */
-  W.animateSegments(G.segs, viewTime, G.partyT > 0 && !rm);
+  /* decor animation + party pulse (runner position feeds the pigeon scatter) */
+  W.animateSegments(G.segs, viewTime, G.partyT > 0 && !rm, pPos);
   document.body.classList.toggle('party', G.partyT > 0);
 
   /* particles + continuous party confetti */
