@@ -116,7 +116,11 @@ GAME.setCallbacks({
   callout: (text, kind) => UI.showCallout(text, kind),
   hud: (G, force) => UI.updateHud(G, force, GAME.multiplier(), GAME.totalScore()),
   tutorial: (msg, done) => UI.showTutorial(msg, done),
-  results: r => { UI.showResults(r); UI.refreshHome(); },
+  results: r => {
+    const d = DISTRICTS[GAME.currentDistrict()];
+    r.newsDistrict = d && d.label ? d.label : null;   // "…chase through Market Mile"
+    UI.showResults(r); UI.refreshHome();
+  },
   mesh: meshCb, meshSwap: meshSwapCb, prune: pruneCb,
   sfx: (name, arg) => sfx[name] && sfx[name](arg),
   fx: fxCb,
@@ -271,6 +275,53 @@ let introFailsafe = null;
 const camPos = new THREE.Vector3(), lookAt = new THREE.Vector3(), pPos = new THREE.Vector3(), oPos = new THREE.Vector3();
 const smooth = t => t * t * (3 - 2 * t);
 const dogCameo = W.mkDogCameo(); W.scene.add(dogCameo); dogCameo.visible = false;
+
+/* ---------------- downtown drizzle ----------------
+   The downtown roads already carry a wet sheen (DISTRICTS.wet 0.45); this is
+   the rain that explains it. ~170 falling streaks kept in a box that wraps
+   around the camera, fading in and out with the district. View-only. */
+const RAIN_N = 170, RAIN_BOX = [30, 22, 34];
+let rain = null, rainVel = null, rainOp = 0;
+function ensureRain() {
+  if (rain) return;
+  const pos = new Float32Array(RAIN_N * 6);
+  rainVel = new Float32Array(RAIN_N);
+  for (let i = 0; i < RAIN_N; i++) {
+    rainVel[i] = 17 + Math.random() * 8;
+    pos[i * 6] = (Math.random() - 0.5) * RAIN_BOX[0];
+    pos[i * 6 + 1] = Math.random() * RAIN_BOX[1];
+    pos[i * 6 + 2] = (Math.random() - 0.5) * RAIN_BOX[2];
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  rain = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({
+    color: 0xb8c4d6, transparent: true, opacity: 0, depthWrite: false }));
+  rain.frustumCulled = false;
+  W.scene.add(rain);
+}
+function updateRain(dt, st) {
+  const want = (GAME.currentDistrict() === 'downtown' &&
+    (st === STATES.RUNNING || st === STATES.CRASHED)) ? 0.38 : 0;
+  rainOp += (want - rainOp) * (1 - Math.exp(-dt * 1.2));
+  if (!rain && rainOp < 0.01) return;
+  ensureRain();
+  rain.material.opacity = rainOp;
+  rain.visible = rainOp > 0.01;
+  if (!rain.visible) return;
+  const p = rain.geometry.attributes.position.array;
+  const cx = W.camera.position.x, cy = Math.max(6, W.camera.position.y), cz = W.camera.position.z;
+  const wrap = (v, c, size) => c + ((((v - c + size / 2) % size) + size) % size) - size / 2;
+  for (let i = 0; i < RAIN_N; i++) {
+    let x = p[i * 6], y = p[i * 6 + 1] - rainVel[i] * dt, z = p[i * 6 + 2];
+    x = wrap(x + dt * 1.2, cx, RAIN_BOX[0]);                       // a touch of wind
+    if (y < cy - RAIN_BOX[1] / 2) y += RAIN_BOX[1];
+    y = Math.min(y, cy + RAIN_BOX[1] / 2);
+    z = wrap(z, cz, RAIN_BOX[2]);
+    p[i * 6] = x; p[i * 6 + 1] = y; p[i * 6 + 2] = z;
+    p[i * 6 + 3] = x + 0.05; p[i * 6 + 4] = y - 0.75; p[i * 6 + 5] = z;
+  }
+  rain.geometry.attributes.position.needsUpdate = true;
+}
 
 /* ---------------- the NEWS 7 chopper ----------------
    Pure view spectacle: once the chase has run long enough to make the evening
@@ -534,6 +585,9 @@ function updateView(dt) {
   /* the press, once the chase is newsworthy */
   updateChopper(dt, st, pPos);
 
+  /* the rain that explains downtown's wet roads */
+  updateRain(dt, st);
+
   /* camera — normal chase framing. During the opening it starts tighter and
      lower (over-the-shoulder, inside the lobby) and dollies out to the chase
      offset, resolving to exactly 0 at the hand-off so it's position-continuous
@@ -547,6 +601,21 @@ function updateView(dt) {
   const high = 3.3 + 0.9 * ik;              // 4.2 → 3.3 chase
   camPos.set(pPos.x - fx * back, pPos.y + high + G.py * 0.35, pPos.z - fz * back);
   lookAt.set(pPos.x + fx * 9, pPos.y + 1.4 + G.py * 0.5, pPos.z + fz * 9);
+
+  /* the arrest deserves a camera: a slow orbit around Jay while the officers
+     close in and the chopper films from overhead. Starts exactly at the chase
+     position (a = camAng is "behind him"), so there is no cut — the camera
+     just begins to circle. The position lerp below does the smoothing. */
+  if (st === STATES.CRASHED) {
+    // the crashed window is 1.15s (game.js dieT), so the whole move must live
+    // inside it — an ease-out sweep that has done most of its arc by halfway
+    const t = Math.min(1, G.dieT / 1.1);
+    const e = 1 - (1 - t) * (1 - t);
+    const a = camAng + e * 1.25;                    // ~70° around the scene
+    const r = 6.4 - e * 1.7;                        // dollying gently in
+    camPos.set(pPos.x + Math.sin(a) * r, pPos.y + 2.7 - e * 1.0, pPos.z + Math.cos(a) * r);
+    lookAt.set(pPos.x, pPos.y + 0.9, pPos.z);
+  }
 
   /* The opening uses the ORDINARY chase camera — behind Jay, facing the way he
      runs. A front-facing cinematic made him read as running backwards and

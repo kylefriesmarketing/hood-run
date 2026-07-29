@@ -208,6 +208,18 @@ sun/wet/skyline, poles/wires/signals, pigeons/steam/clutter, rigged Jay +
 officers + bystanders (bank cops + sidewalk crowd), arrest animation, closet
 turntable. Zero known console errors; memory flat.
 
+ENDGAME PRESENTATION (v21): arrest cam — during the 1.15s crashed window
+(game.js dieT, the whole move must fit inside it) the camera ease-out
+orbits ~70° around Jay from the exact chase position (no cut) while
+dollying in; results screen shows a NEWS 7 broadcast lower-third
+(#ov-news) when dist >= 750 (two headline tiers, district name fed via
+r.newsDistrict from main.js); downtown gets RAIN — ~170 LineSegments
+streaks wrap-boxed around the camera, fading with the district
+(updateRain in main.js), plus a drizzle-hiss loop in the downtown
+ambience bed. ⚠️ shot-receiver ports: concurrent sessions fight over
+8399 and node binds :: while the page fetches IPv4 — run a private
+receiver on 127.0.0.1:8398 when contested.
+
 NEWS 7 CHOPPER SHIPPED (v20): past 750m of chase, a procedural news
 helicopter (mkNewsChopper in world.js — rotors, blur disc, strobes, nose
 camera ball, NEWS 7 livery) flies in with a callout, ORBITS Jay with its

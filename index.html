@@ -276,6 +276,12 @@
   #ov-daily{ display:none; font-size:13px; color:var(--teal); font-weight:800; margin-top:var(--sp2); }
   #ov-daily b{ color:var(--gold); }
   #ov-cause{ font-size:13.5px; color:#ffa7a7; font-weight:700; margin:var(--sp2) 0 var(--sp4); }
+  /* broadcast lower-third — shown when the chase made the evening news */
+  #ov-news{ display:none; margin:var(--sp2) auto 0; max-width:330px; background:#16181e;
+    border:1px solid #2a2e38; border-radius:8px; padding:6px 10px;
+    font-size:12.5px; font-style:italic; color:#dfe3ea; text-align:left; }
+  #ov-news .n7{ font-style:normal; font-weight:900; background:#d23c3c; color:#fff;
+    border-radius:4px; padding:1px 6px; margin-right:6px; font-size:11px; letter-spacing:.5px; }
   .total-wrap{ background:rgba(0,0,0,.26); border:1px solid var(--line); border-radius:var(--r-lg);
     padding:var(--sp4) var(--sp3); margin-bottom:var(--sp4); }
   #ov-total{ font-size:clamp(40px,11vw,58px); font-weight:900; color:var(--gold); line-height:1;
@@ -459,6 +465,7 @@
   <div class="sheet">
     <div class="sheet-body">
       <div class="over-title" id="ov-title">BUSTED!</div>
+      <div id="ov-news"></div>
       <div id="ov-daily"></div>
       <div id="ov-cause"></div>
       <div class="total-wrap">

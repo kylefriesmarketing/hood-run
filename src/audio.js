@@ -97,6 +97,9 @@ export function ambientSet(kind) {
   // crowd murmur where there are crowds
   if (kind === 'market' || kind === 'nightmarket')
     ambLoop(520, 'bandpass', kind === 'nightmarket' ? 0.035 : 0.024, 0.4, 0.55, 1.6);
+  // drizzle hiss under downtown's rain
+  if (kind === 'downtown')
+    ambLoop(2600, 'highpass', 0.02, 0.22, 0.35);
   // a far-off horn or siren now and then
   const tick = () => {
     if (AMB.kind !== kind) return;
