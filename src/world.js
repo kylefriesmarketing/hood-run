@@ -8,6 +8,7 @@ import { makeBuilder, detailMaterial } from './geo.js';
 import { buildHumanoid } from './character.js';
 import { initPBR, onPBRReady, baseImage, pbrProfile } from './pbr.js';
 import { rigReady, createRigged, play, attachToBone } from './rig.js';
+import { sfx } from './audio.js';
 
 export let scene, camera, renderer;
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -1932,8 +1933,9 @@ export function animateSegments(segs, time, party, runnerPos) {
       const b = r.bones.RightArm;
       if (b) b.rotation.z -= 1.7 + Math.sin(time * 6) * 0.4;
     }
+    const wantsLocal = runnerPos && (g.userData.pigeons || g.userData.grates);
+    if (wantsLocal) { _pl.copy(runnerPos); g.worldToLocal(_pl); }
     if (g.userData.pigeons && runnerPos) {
-      _pl.copy(runnerPos); g.worldToLocal(_pl);
       for (const p of g.userData.pigeons) {
         const u = p.userData;
         if (u.state === 'peck') {
@@ -1944,6 +1946,7 @@ export function animateSegments(segs, time, party, runnerPos) {
             const a = Math.atan2(-dx, -dz) + rand(-0.5, 0.5);
             u.vel = new THREE.Vector3(Math.sin(a) * rand(3, 5), rand(4.5, 6.5), Math.cos(a) * rand(3, 5));
             p.rotation.y = a + Math.PI;                    // face the way it flees (+z forward)
+            sfx.flap(0.5 + 0.5 * (1 - Math.sqrt(dx * dx + dz * dz) / 7));  // voice-capped: a flock is one flap
           }
         } else if (u.state === 'fly') {
           p.position.addScaledVector(u.vel, dt);
@@ -1960,6 +1963,14 @@ export function animateSegments(segs, time, party, runnerPos) {
         w.m.position.x = Math.sin((w.t + time * 0.1) * 5) * 0.25;
         w.m.scale.setScalar(0.5 + w.t * 1.1);
         w.m.material.opacity = 0.3 * Math.sin(Math.PI * w.t);
+      }
+      if (runnerPos) {                                    // a soft hiss as Jay passes
+        const dx = _pl.x - sg.position.x, dz = _pl.z - sg.position.z;
+        const d2 = dx * dx + dz * dz;
+        if (d2 < 30 && (!sg.userData.hissT || time - sg.userData.hissT > 3)) {
+          sg.userData.hissT = time;
+          sfx.steam(1 - Math.sqrt(d2) / 6);
+        }
       }
     }
     if (g.userData.bulbs) for (let i = 0; i < g.userData.bulbs.length; i++) {

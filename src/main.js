@@ -15,7 +15,7 @@ import * as VFX from './vfx.js';
 import { createPostFX } from './postfx.js';
 import { initMissions } from './progression.js';
 import { attachInput, onAction } from './input.js';
-import { audioInit, audioResume, musicStart, musicStop, musicLayers, sfx, sirenStart, sirenStop, sirenPass } from './audio.js';
+import { audioInit, audioResume, musicStart, musicStop, musicLayers, sfx, sirenStart, sirenStop, sirenPass, ambientSet, ambientStop } from './audio.js';
 import * as UI from './ui.js';
 
 /* ---------------- boot ---------------- */
@@ -102,6 +102,7 @@ function watchDistrict() {
   if (d === 'alley' || d === lastDistrict) return;
   lastDistrict = d;
   W.applyDistrict(d, false);
+  ambientSet(d);                        // the city's own sound follows the look
   const s = loadSave();
   s.discovered = s.discovered || ['block'];
   const isNew = !s.discovered.includes(d);
@@ -143,13 +144,14 @@ function onState(s) {
   document.body.classList.toggle('intro', s === STATES.COUNTDOWN);
   if (s === STATES.RUNNING) {
     musicStart(); UI.hideScreens();
+    ambientSet(lastDistrict);
     setTimeout(() => sirenStop(1.4), 900);      // wail into the getaway, then fade under music
   } else if (s === STATES.PAUSED) {
-    musicStop(); UI.showScreen('paused');
+    musicStop(); ambientStop(); UI.showScreen('paused');
   } else if (s === STATES.CRASHED) {
-    musicStop(); sirenStop(0.4);
+    musicStop(); sirenStop(0.4); ambientStop();
   } else if (s === STATES.HOME) {
-    musicStop(); sirenStop(0.4);
+    musicStop(); sirenStop(0.4); ambientStop();
   } else if (s === STATES.COUNTDOWN) {
     UI.hideScreens(); introT = TUNE.introDur; baseYView = 0; doorBurst = false;
     // timers still fire when rAF is starved, so this guarantees the hand-off
