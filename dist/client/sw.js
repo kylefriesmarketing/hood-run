@@ -1,13 +1,22 @@
 /* HOOD RUN — service worker: offline-first cache of the static shell.
    Bump CACHE when any listed asset changes. */
-const CACHE = 'hood-run-v11';
+const CACHE = 'hood-run-v22';
 const ASSETS = [
   './', './index.html', './manifest.webmanifest', './icon.svg',
   './lib/three.module.js',
+  './lib/loaders/GLTFLoader.js', './lib/utils/BufferGeometryUtils.js', './lib/utils/SkeletonUtils.js',
   './src/main.js', './src/game.js', './src/world.js', './src/runner.js',
   './src/segment-generator.js', './src/collisions.js', './src/progression.js',
   './src/save.js', './src/audio.js', './src/ui.js', './src/input.js',
   './src/data.js', './src/vfx.js', './src/postfx.js', './src/geo.js', './src/character.js',
+  './src/pbr.js', './src/rig.js',
+  './assets/rig/human.glb',      // the skinned character (CC0, Quaternius)
+  // CC0 photographic material sets (ambientCG), resized to 512 and ORM-packed.
+  // ~613 KB total: worth precaching so an offline launch is not a flat-colour city.
+  './assets/tex/brick-color.jpg', './assets/tex/brick-normal.jpg', './assets/tex/brick-orm.jpg',
+  './assets/tex/asphalt-color.jpg', './assets/tex/asphalt-normal.jpg', './assets/tex/asphalt-orm.jpg',
+  './assets/tex/sidewalk-color.jpg', './assets/tex/sidewalk-normal.jpg', './assets/tex/sidewalk-orm.jpg',
+  './assets/tex/concrete-color.jpg', './assets/tex/concrete-normal.jpg', './assets/tex/concrete-orm.jpg',
 ];
 
 self.addEventListener('install', e => {

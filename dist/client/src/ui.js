@@ -172,6 +172,18 @@ export function showResults(r) {
                    : `🗓️ Today's Daily best stands at <b>${r.dailyToday.toLocaleString()}</b>`)
     : '';
   $('ov-daily').style.display = r.daily ? 'block' : 'none';
+  // the broadcast lower-third appears only if the chase drew the chopper
+  const news = $('ov-news');
+  if (news) {
+    if (r.dist >= 750) {
+      const where = r.newsDistrict || 'the city';
+      const line = r.dist >= 1500
+        ? `&ldquo;Uncatchable&rdquo;? Dash hits ${r.dist}m before dramatic arrest`
+        : `Runner leads patrol on ${r.dist}m chase through ${where}`;
+      news.innerHTML = `<span class="n7">NEWS 7</span> ${line}`;
+      news.style.display = 'block';
+    } else news.style.display = 'none';
+  }
   $('ov-total').textContent = r.total.toLocaleString();
   $('ov-cause').textContent = r.cause;
   $('ov-breakdown').innerHTML = [

@@ -75,7 +75,15 @@ export function initWorld(canvas) {
     },
     vertexShader: `
       varying vec3 vW;
-      void main(){ vW = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+      void main(){
+        vW = position;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
+        /* pin to the far plane: the dome is centred on the RUNNER, so any other
+           camera (aerial/trailer free cams) with far <= ~310 sliced it and the
+           black clear colour showed through the hole as a "pyramid" on the
+           horizon. Pinned depth can never be far-clipped by any camera. */
+        gl_Position.z = gl_Position.w * 0.99999;
+      }`,
     fragmentShader: `
       uniform vec3 top; uniform vec3 bottom; uniform vec3 sunCol; uniform vec3 sunDir;
       varying vec3 vW;
@@ -90,17 +98,30 @@ export function initWorld(canvas) {
       }`,
   }));
   skyDome.renderOrder = -1000;
+  skyDome.frustumCulled = false;   // bounding-sphere culling must never drop the sky
   scene.add(skyDome);
 
-  /* Image-based lighting. Standard materials only really come alive with an
-     environment to reflect, so bake one straight off the sky dome: glass picks
-     up the sky, chrome and paintwork get a soft falloff, and everything gains
-     the ambient bounce a single hemisphere light can't fake. Regenerated only
-     when a district transition finishes — it is far too costly per frame. */
+  /* Image-based lighting — INERT BY DESIGN, do not "fix" it casually.
+     The truth (measured 2026-07-29): PMREM fromScene's default far plane is
+     100, the dome's radius is 300, so this bake has clipped the dome away and
+     produced a BLACK environment since day one. Every light in the game —
+     hemi ×1.3, sun, exposure 1.25 — was tuned against that black env. Pinning
+     the env dome's depth like the visible dome would suddenly make the bake
+     real and lift the whole frame ~+55% mean luma (70→108 measured): a full
+     re-art-direction, not a bugfix. So the env dome deliberately keeps the
+     UNPINNED shader (far-clips in the bake, exactly as shipped). If real IBL
+     is ever wanted: pass far>300 to fromScene AND retune exposure/lights. */
   pmrem = new THREE.PMREMGenerator(renderer);
   pmrem.compileEquirectangularShader();
   envScene = new THREE.Scene();
-  envDome = new THREE.Mesh(skyDome.geometry, skyDome.material);
+  envDome = new THREE.Mesh(skyDome.geometry, new THREE.ShaderMaterial({
+    side: THREE.BackSide, depthWrite: false, fog: false,
+    uniforms: skyDome.material.uniforms,   // shared refs: district lerps reach both
+    vertexShader: `
+      varying vec3 vW;
+      void main(){ vW = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+    fragmentShader: skyDome.material.fragmentShader,
+  }));
   envScene.add(envDome);
   refreshEnv();
 

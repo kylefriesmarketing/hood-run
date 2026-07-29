@@ -6,20 +6,82 @@ import * as THREE from '../lib/three.module.js';
 import { COSMETICS } from './data.js';
 import { scene, box, blobShadow, cmat } from './world.js';
 import { buildHumanoid } from './character.js';
+import { loadRig, rigReady, createRigged, play, attachToBone } from './rig.js';
 
-let mesh = null, parts = null, trailPool = [], trailKind = 'none', trailT = 0, poseKind = 'cheer';
+let mesh = null, parts = null, rig = null, trailPool = [], trailKind = 'none', trailT = 0, poseKind = 'cheer';
+let lastEquipped = null, lastPoseT = 0;
 
 function cosmeticById(slot, id) {
   return COSMETICS[slot].find(c => c.id === id) || COSMETICS[slot][0];
 }
 
-/* Build a standalone Jay from an equipped set. Returns { group, parts } and
-   touches no scene, so the closet can render its own preview copy. */
+/* The skinned character streams in behind the first frames; whoever is on
+   screen as a capsule quietly becomes the real model the moment it lands. */
+loadRig().then(ok => { if (ok && mesh && lastEquipped) buildRunner(lastEquipped); });
+
+
+/* Build a standalone Jay from an equipped set. Returns { group, parts, rig }
+   and touches no scene, so the closet can render its own preview copy.
+   Rigged when the GLB has landed, capsule until then. */
 export function makeRunner(equipped) {
   const outfit = cosmeticById('outfit', equipped.outfit).color;
   const shoes = cosmeticById('shoes', equipped.shoes).color;
   const hat = cosmeticById('hat', equipped.hat);
   const skin = cosmeticById('skin', equipped.skin).color;
+
+  if (rigReady()) {
+    const r = createRigged({ skin, top: outfit, pants: 0x2a3038, shoes });
+    const g = r.group;
+
+    // money sack on the hip — rides Hips so it bounces with the run
+    const sackG = new THREE.Group();
+    const sack = new THREE.Mesh(new THREE.SphereGeometry(0.135, 10, 8),
+      new THREE.MeshStandardMaterial({ color: 0xd8b878, roughness: 0.92 }));
+    sack.scale.set(1, 1.15, 0.72); sackG.add(sack);
+    sackG.add(box(0.07, 0.05, 0.07, 0xa8885c, 0, 0.16, 0));               // tied neck
+    const dollar = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 0.1),
+      new THREE.MeshBasicMaterial({ map: dollarTex(), transparent: true, side: THREE.DoubleSide }));
+    dollar.position.set(-0.09, 0, 0); dollar.rotation.y = -Math.PI / 2; sackG.add(dollar);
+    attachToBone(r, 'Hips', sackG, new THREE.Vector3(-0.26, -0.02, -0.08));
+
+    // headwear rides the Head bone, so it stays on through every clip
+    const hatG = new THREE.Group();
+    const dome = (col, ry, sy) => {
+      const m = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.55),
+        new THREE.MeshStandardMaterial({ color: col, roughness: 0.85 }));
+      m.scale.set(0.14, sy, 0.15); m.position.y = ry; return m;
+    };
+    if (hat.kind === 'cap') {
+      hatG.add(dome(hat.color, 0.02, 0.13));
+      hatG.add(box(0.22, 0.03, 0.14, hat.color, 0, 0.04, 0.15));
+    } else if (hat.kind === 'beanie') {
+      hatG.add(dome(hat.color, 0.0, 0.17));
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 12),
+        new THREE.MeshStandardMaterial({ color: hat.color, roughness: 0.9 }));
+      band.scale.set(0.148, 0.05, 0.155); band.position.y = 0.0; hatG.add(band);
+    } else if (hat.kind === 'bucket') {
+      hatG.add(dome(hat.color, 0.01, 0.12));
+      hatG.add(box(0.36, 0.03, 0.37, hat.color, 0, 0.03, 0));
+    } else if (hat.kind === 'visor') {
+      hatG.add(box(0.26, 0.04, 0.26, hat.color, 0, 0.06, 0));
+      hatG.add(box(0.22, 0.027, 0.14, hat.color, 0, 0.055, 0.15));
+    } else if (hat.kind === 'phones') {
+      hatG.add(box(0.28, 0.035, 0.09, hat.color, 0, 0.12, 0));
+      for (const s of [-1, 1]) {
+        const cup = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6),
+          new THREE.MeshStandardMaterial({ color: hat.color, roughness: 0.6 }));
+        cup.scale.set(0.037, 0.057, 0.057); cup.position.set(s * 0.14, -0.03, 0.01);
+        hatG.add(cup);
+      }
+    }
+    // Head bone origin is at the neck; the crown sits ~0.24 above it. At 0.14
+    // the cap band cut across his brow with hair poking out the top.
+    if (hatG.children.length) attachToBone(r, 'Head', hatG, new THREE.Vector3(0, 0.24, 0));
+
+    const blob = blobShadow(0.85); blob.material = blob.material.clone();
+    blob.material.opacity = 0.18; g.add(blob);
+    return { group: g, parts: null, rig: r };
+  }
 
   /* articulated body from the shared humanoid; cosmetics layer on top */
   const built = buildHumanoid({ skin, outfit, shoes, pants: 0x2a3038, build: 'runner', hood: true });
@@ -74,14 +136,15 @@ export function makeRunner(equipped) {
   const blob = blobShadow(0.85); blob.material = blob.material.clone();
   blob.material.opacity = 0.18; mesh.add(blob);
   mesh.traverse(o => { if (o.isMesh && o !== blob) o.castShadow = true; });
-  return { group: mesh, parts };
+  return { group: mesh, parts, rig: null };
 }
 
 /* The in-world Jay: build one and own it as the module singleton. */
 export function buildRunner(equipped) {
+  lastEquipped = equipped;
   if (mesh) scene.remove(mesh);
   const built = makeRunner(equipped);
-  mesh = built.group; parts = built.parts;
+  mesh = built.group; parts = built.parts; rig = built.rig;
   trailKind = cosmeticById('trail', equipped.trail).kind;
   poseKind = cosmeticById('pose', equipped.pose).kind;
   scene.add(mesh);
@@ -130,7 +193,39 @@ function noteTex() {
 export function runnerMesh() { return mesh; }
 
 /* pose: { mode:'run'|'jump'|'slide'|'crash'|'idle'|'celebrate', phase, py, stumble, lean, time } */
+let lastPhase = 0;
 export function poseRunner(p) {
+  if (rig) {
+    /* Clip-driven path. dt comes from viewTime deltas (not every caller passes
+       dt); stride rate follows the sim's own runPhase, so his legs match his
+       real ground speed exactly like the capsule did. */
+    const dt = Math.max(0, Math.min(0.1, (p.time || 0) - lastPoseT));
+    lastPoseT = p.time || 0;
+    const m = p.mode;
+    if (m === 'run' || m === 'slide') {
+      const dPhase = Math.max(0, (p.phase || 0) - lastPhase);
+      // Run clip strides at ~13 rad/s of game phase at timeScale 1
+      const ts = dt > 0 ? Math.max(0.5, Math.min(2.4, (dPhase / dt) / 13)) : 1;
+      play(rig, 'Run', { timeScale: ts });
+    }
+    else if (m === 'jump') play(rig, 'Jump', { once: true, fade: 0.08 });
+    else if (m === 'crash') play(rig, 'Death', { once: true, fade: 0.1 });
+    else play(rig, 'Idle');
+    lastPhase = p.phase || 0;
+    rig.mixer.update(dt);
+
+    /* procedural layers AFTER the mixer — same pattern as a melee lunge riding
+       an attack clip: clips own the bones, these own the root */
+    if (m === 'slide') {
+      rig.root.position.y = -0.52;
+      rig.bones.Spine1 && (rig.bones.Spine1.rotation.x += 0.9);
+      rig.bones.Head && (rig.bones.Head.rotation.x -= 0.45);
+    } else rig.root.position.y = 0;
+    if (m === 'celebrate') rig.group.position.y = Math.abs(Math.sin((p.time || 0) * 5)) * 0.14;
+    if (p.stumble) rig.bones.Spine2 && (rig.bones.Spine2.rotation.z += Math.sin(p.time * 30) * 0.2 * p.stumble);
+    mesh.rotation.z = (p.lean || 0) * -0.1;
+    return;
+  }
   if (!parts) return;
   const b = parts;
   if (p.mode === 'jump') {

@@ -244,15 +244,51 @@ Open threads, in rough priority:
 1. **Human playtest tuning** — difficulty ramp, turn window, chase pressure,
    AND the ambience mix levels. Only Kyle can do this; the bot's survival
    distances are not a difficulty read.
-2. **Black pyramid artifact** on the horizon — pre-existing, invisible from
-   all gameplay cameras, only from elevated free cams. Parked as a task chip;
-   matters only for aerial/trailer shots. Raycast passes through it.
+2. ~~Black pyramid artifact~~ **SOLVED 2026-07-29 (v22)** — see the section below.
 3. The dog cameo is still the box-dog (charming; low priority).
 4. Store could sell outfit COLOURS for the rig (the vertex-colour system makes
    any palette free).
 5. Render cost roughly doubled across the visual passes (backgrounded-tab
    relative measurement); the adaptive quality ladder covers weak devices,
    but pull this thread first if the game ever feels heavy on a phone.
+
+## The black pyramid, solved (2026-07-29, v22) — and the IBL truth
+
+The "unlit black pyramid on the horizon" seen only from elevated free cams
+**was not an object at all**: the sky dome (SphereGeometry r=300, centred on
+the RUNNER) was being sliced by the free camera's far plane (far=300 exactly),
+and the renderer's CLEAR COLOUR — black, `scene.background` is never set —
+showed through the hole. The far plane cutting the coarse 24×16 faceted sphere
+makes the hole polygonal: an apex-up "pyramid" sitting on the horizon. That is
+why every prior probe came back weird: no raycast hits it (nothing is there),
+no per-child bisect finds it (hiding the dome just turns the WHOLE sky black),
+and gameplay cams never see it (their far is 400 ≥ 300 + camera offset).
+Proof method worth keeping: set `renderer.setClearColor(0xff2222)` — the
+artifact turns red ⇒ it is absence-of-geometry, full stop.
+
+**Fix**: the dome's vertex shader pins depth to the far plane
+(`gl_Position.z = gl_Position.w * 0.99999` — the standard skybox trick), so NO
+camera at ANY far distance can clip it; plus `frustumCulled = false`.
+Verified: matched pairs far=300 with/without fix, gameplay frame byte-stable
+(mean RGB identical to 0.1), 0 console errors, generation test green.
+
+⚠️⚠️ **DO NOT pin the ENV dome's shader too — read this before touching
+refreshEnv/envDome.** PMREM `fromScene` defaults to far=100, the dome is
+r=300, so the IBL bake has been far-clipped to BLACK since day one: the
+game's entire lighting (hemi ×1.3, exposure 1.25) was tuned against a black
+environment. Pinning the shared material made the bake suddenly real and
+lifted the whole frame from mean RGB ~70/61/56 to ~108/109/106 (+55%) — a
+washed-out re-lighting of a shipped look. envDome therefore keeps its own
+UNPINNED copy of the shader (same uniforms object, so district lerps still
+reach it) and the bake stays deliberately inert. Enabling real IBL is a
+DESIGN decision: far>300 in fromScene + a full exposure/light retune, with
+Kyle looking at it.
+
+**Aerial/trailer capture recipe** (now safe): `__hrTest=true`, `__hr.start
+(seed)`, tick to 'running', `__hr.god(true)`, tick as far as needed; free cam
+`new THREE.PerspectiveCamera(62, w/h, 0.1, 300)` at y≈26 looking down-track;
+`renderer.setSize(w,h,false)` → `renderer.render(scene, cam)` → `toDataURL`
+same-task → POST to the shot receiver. Any far value works now.
 
 ## How to recreate from nothing
 

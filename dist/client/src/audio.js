@@ -23,6 +23,140 @@ export function setVolumes(music, sfx) {
   A.musicVol = music; A.sfxVol = sfx;
   if (A.musicBus) A.musicBus.gain.value = music * 0.55;
   if (A.sfxBus) A.sfxBus.gain.value = sfx * 0.6;
+  if (AMB.bus) AMB.bus.gain.value = sfx * 0.5;   // the city rides the sfx slider
+}
+
+/* ---- city ambience bed ----
+   A quiet layer of the city itself under the music: traffic rumble, crowd
+   murmur where there are crowds, a far-off horn or siren now and then.
+   EVERY continuous node and every timer is tracked in AMB and torn down on
+   ambientSet/ambientStop — untracked beds stack forever across district
+   changes and turn into an awful drone (a lesson paid for elsewhere). */
+const AMB = { bus: null, nodes: [], timers: [], kind: null };
+function ambBus() {
+  if (!AMB.bus && A.ctx) {
+    AMB.bus = A.ctx.createGain();
+    AMB.bus.gain.value = A.sfxVol * 0.5;
+    AMB.bus.connect(A.master);
+  }
+  return AMB.bus;
+}
+/* endless looped noise -> filter -> gain, with a slow LFO breathing the level
+   so the rumble swells and fades like passing traffic instead of hissing flat */
+function ambLoop(freq, type, vol, lfoRate, lfoDepth, Q = 0.8) {
+  const c = A.ctx;
+  const len = c.sampleRate * 2, b = c.createBuffer(1, len, c.sampleRate), d = b.getChannelData(0);
+  let v = 0;
+  for (let i = 0; i < len; i++) { v = v * 0.97 + (Math.random() * 2 - 1) * 0.14; d[i] = v * 3; } // brownish
+  const src = c.createBufferSource(); src.buffer = b; src.loop = true;
+  const f = c.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = Q;
+  const g = c.createGain(); g.gain.value = vol;
+  const lfo = c.createOscillator(); lfo.frequency.value = lfoRate;
+  const lg = c.createGain(); lg.gain.value = vol * lfoDepth;
+  lfo.connect(lg); lg.connect(g.gain);
+  src.connect(f); f.connect(g); g.connect(ambBus());
+  src.start(); lfo.start();
+  AMB.nodes.push(src, lfo, g, f, lg);
+}
+function hornDistant() {
+  if (!A.ctx) return; const c = A.ctx, t = c.currentTime;
+  const two = Math.random() < 0.5;                 // some drivers lean on it twice
+  for (let k = 0; k < (two ? 2 : 1); k++) {
+    const t0 = t + k * 0.5;
+    for (const fr of [292, 365]) {                 // a slightly sour two-tone
+      const o = c.createOscillator(); o.type = 'square'; o.frequency.value = fr * (1 + Math.random() * 0.02);
+      const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 520;
+      const g = c.createGain();
+      g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(0.028, t0 + 0.05);
+      g.gain.setValueAtTime(0.028, t0 + 0.22); g.gain.linearRampToValueAtTime(0, t0 + 0.34);
+      o.connect(f); f.connect(g); g.connect(ambBus()); o.start(t0); o.stop(t0 + 0.4);
+    }
+  }
+}
+function sirenDistant() {
+  if (!A.ctx) return; const c = A.ctx, t = c.currentTime;
+  const o = c.createOscillator(); o.type = 'sawtooth';
+  o.frequency.setValueAtTime(700, t);
+  o.frequency.linearRampToValueAtTime(950, t + 0.8);
+  o.frequency.linearRampToValueAtTime(680, t + 1.7);
+  o.frequency.linearRampToValueAtTime(880, t + 2.4);
+  const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 760;  // blocks away
+  const g = c.createGain();
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.03, t + 0.9);
+  g.gain.linearRampToValueAtTime(0, t + 2.6);
+  o.connect(f); f.connect(g); g.connect(ambBus()); o.start(t); o.stop(t + 2.7);
+}
+export function ambientSet(kind) {
+  if (!A.ctx || AMB.kind === kind) return;
+  ambientStop();
+  AMB.kind = kind;
+  ambBus();
+  // traffic rumble everywhere, weighted per district
+  const rumble = { block: 0.05, market: 0.038, downtown: 0.07, nightmarket: 0.032 }[kind] ?? 0.045;
+  ambLoop(230, 'lowpass', rumble, 0.07, 0.5);
+  // crowd murmur where there are crowds
+  if (kind === 'market' || kind === 'nightmarket')
+    ambLoop(520, 'bandpass', kind === 'nightmarket' ? 0.035 : 0.024, 0.4, 0.55, 1.6);
+  // drizzle hiss under downtown's rain
+  if (kind === 'downtown')
+    ambLoop(2600, 'highpass', 0.02, 0.22, 0.35);
+  // a far-off horn or siren now and then
+  const tick = () => {
+    if (AMB.kind !== kind) return;
+    const roll = Math.random();
+    if (kind === 'nightmarket' && roll < 0.4) sirenDistant();
+    else if (roll < (kind === 'downtown' ? 0.6 : 0.35)) hornDistant();
+    AMB.timers.push(setTimeout(tick, 5000 + Math.random() * 9000));
+  };
+  AMB.timers.push(setTimeout(tick, 2500 + Math.random() * 4000));
+}
+/* ---- news chopper rotor ----
+   Whump-whump: lowpassed noise gated by a ~13Hz square LFO (the blade chop)
+   over a soft rotor hum. Own tracked node set, same teardown discipline as
+   the ambience bed. */
+const CHOP = { nodes: [], on: false };
+export function chopperStart() {
+  if (!A.ctx || CHOP.on) return;
+  CHOP.on = true;
+  const c = A.ctx, t = c.currentTime;
+  const len = c.sampleRate * 2, b = c.createBuffer(1, len, c.sampleRate), d = b.getChannelData(0);
+  let v = 0;
+  for (let i = 0; i < len; i++) { v = v * 0.96 + (Math.random() * 2 - 1) * 0.18; d[i] = v * 2.6; }
+  const src = c.createBufferSource(); src.buffer = b; src.loop = true;
+  const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 340;
+  const g = c.createGain(); g.gain.value = 0;                 // chopped by the LFO
+  const lfo = c.createOscillator(); lfo.type = 'square'; lfo.frequency.value = 12.5;
+  const lg = c.createGain(); lg.gain.value = 0.045;
+  const bias = c.createConstantSource(); bias.offset.value = 0.05;
+  lfo.connect(lg); lg.connect(g.gain); bias.connect(g.gain);
+  const hum = c.createOscillator(); hum.type = 'triangle'; hum.frequency.value = 52;
+  const hg = c.createGain(); hg.gain.setValueAtTime(0, t); hg.gain.linearRampToValueAtTime(0.03, t + 1.2);
+  const master = c.createGain(); master.gain.setValueAtTime(0, t);
+  master.gain.linearRampToValueAtTime(1, t + 1.5);            // flies in, fades in
+  src.connect(f); f.connect(g); g.connect(master);
+  hum.connect(hg); hg.connect(master);
+  master.connect(ambBus());
+  src.start(); lfo.start(); bias.start(); hum.start();
+  CHOP.nodes.push(src, f, g, lfo, lg, bias, hum, hg, master);
+}
+export function chopperStop(fade = 1.0) {
+  if (!A.ctx || !CHOP.on) return;
+  CHOP.on = false;
+  const master = CHOP.nodes[CHOP.nodes.length - 1], t = A.ctx.currentTime;
+  const nodes = CHOP.nodes; CHOP.nodes = [];
+  try { master.gain.cancelScheduledValues(t); master.gain.setValueAtTime(master.gain.value, t); master.gain.linearRampToValueAtTime(0, t + fade); } catch { /* ctx gone */ }
+  setTimeout(() => { for (const n of nodes) { try { n.stop && n.stop(); } catch { /* stopped */ } try { n.disconnect(); } catch { /* detached */ } } }, fade * 1000 + 80);
+}
+export function chopperOn() { return CHOP.on; }
+
+/* test hook: the bed's node graph is otherwise invisible from outside */
+export function ambientDebug() { return { kind: AMB.kind, nodes: AMB.nodes.length, timers: AMB.timers.length, chopper: CHOP.on }; }
+export function ambientStop() {
+  for (const n of AMB.nodes) { try { n.stop && n.stop(); } catch { /* already stopped */ } try { n.disconnect(); } catch { /* detached */ } }
+  AMB.nodes = [];
+  for (const t of AMB.timers) clearTimeout(t);
+  AMB.timers = [];
+  AMB.kind = null;
 }
 export function musicStart() { A.beatOn = true; if (A.ctx) { A.next = A.ctx.currentTime + 0.05; } }
 export function musicStop() { A.beatOn = false; }
@@ -141,6 +275,7 @@ function blip(freq, dur, type = 'sine', vol = 0.3, slide = 0) {
 }
 
 let coinVoices = 0;      // limit simultaneous coin pings
+let flapVoices = 0;      // a whole flock is ONE flap, not five
 export const sfx = {
   jump() { blip(330, 0.16, 'sine', 0.22, 240); if (A.ctx) noiseTo(A.sfxBus, A.ctx.currentTime, 0.08, 3200, 'highpass', 0.05); },
   land() { if (A.ctx) noiseTo(A.sfxBus, A.ctx.currentTime, 0.07, 900, 'lowpass', 0.12); },
@@ -171,5 +306,15 @@ export const sfx = {
     }
   },
   whistle() { blip(1450, 0.12, 'sine', 0.16, 320); setTimeout(() => blip(1450, 0.2, 'sine', 0.16, 380), 150); },
+  flap(vol = 1) {                       // a flock bursting off the sidewalk
+    if (flapVoices > 1 || !A.ctx) return;
+    flapVoices++; setTimeout(() => flapVoices--, 400);
+    const t = A.ctx.currentTime;
+    for (let i = 0; i < 6; i++)
+      noiseTo(A.sfxBus, t + i * 0.028, 0.035, 1700 - i * 90, 'bandpass', 0.11 * vol * (1 - i * 0.1));
+  },
+  steam(vol = 1) {                      // passing a breathing grate
+    if (A.ctx) noiseTo(A.sfxBus, A.ctx.currentTime, 0.5, 2800, 'highpass', 0.055 * vol);
+  },
   bounce() { duck(0.35, 0.12, 0.3); blip(180, 0.14, 'sine', 0.24, 260); setTimeout(() => blip(240, 0.12, 'sine', 0.18, 200), 130); },
 };

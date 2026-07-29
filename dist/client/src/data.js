@@ -102,6 +102,10 @@ export const DISTRICTS = {
     signs: ["JB'S DELI","CROWN FRIED","BARBER SHOP","LAUNDROMAT","CORNER STORE","99¢ & UP","RECORDS"],
     decor: { trees: true, stoops: true, court: true, chalk: true, murals: true, hydrants: true },
     stringLights: false, buildingH: [8, 15],
+    // sunOff: [dx, dy, dz] from the runner. KEEP dx/dy STEEP (see followCam's
+    // note in world.js) — shadow reach across the road is h*dx/dy, and a low
+    // sun puts every hazard in shade. wet: 0..1 road sheen.
+    sunOff: [-12, 46, 15], wet: 0,
   },
   market: {
     label: 'Market Mile', icon: '🍊',
@@ -112,6 +116,7 @@ export const DISTRICTS = {
     signs: ["FISH MARKET","PRODUCE 24HR","TACOS Y MAS","FLOWER SHOP","CAFÉ SOL","JERK CHICKEN","SPICE HOUSE"],
     decor: { stands: true, tables: true, posters: true, murals: true },
     stringLights: true, buildingH: [8, 14],
+    sunOff: [-15, 44, 18], wet: 0,          // golden hour: longest rake that stays off the lanes
   },
   downtown: {
     label: 'Downtown Cut', icon: '🚇',
@@ -122,6 +127,7 @@ export const DISTRICTS = {
     signs: ["METRO DINER","COPY + PRINT","GALLERY 9","NOODLE BAR","NEWSSTAND","PHARMACY"],
     decor: { glass: true, subway: true, buslane: true, scaffolds: true },
     stringLights: false, buildingH: [14, 26],
+    sunOff: [-8, 52, 10], wet: 0.45,        // high overcast: 26-tall towers must not shade the road
   },
   nightmarket: {
     label: 'Night Market', icon: '🏮',
@@ -132,6 +138,7 @@ export const DISTRICTS = {
     signs: ["NOODLE HOUSE","DUMPLING BAR","NIGHT OWL CAFÉ","LANTERN GRILL","SWEET BUNS","KARAOKE"],
     decor: { stands: true, tables: true, posters: true, murals: true, lanterns: true, neon: true },
     stringLights: true, buildingH: [9, 16],
+    sunOff: [-10, 40, 12], wet: 0.9,        // rain-slick night streets under the lanterns
   },
   alley: { // shortcut micro-district (inherits current district palette)
     label: 'Alley', icon: '🧺',

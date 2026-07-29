@@ -10,11 +10,12 @@ import * as W from './world.js';
 import * as GAME from './game.js';
 import { STATES } from './game.js';
 import { buildRunner, runnerMesh, poseRunner, updateTrail, makeRunner } from './runner.js';
+import * as RIG from './rig.js';
 import * as VFX from './vfx.js';
 import { createPostFX } from './postfx.js';
 import { initMissions } from './progression.js';
 import { attachInput, onAction } from './input.js';
-import { audioInit, audioResume, musicStart, musicStop, musicLayers, sfx, sirenStart, sirenStop, sirenPass } from './audio.js';
+import { audioInit, audioResume, musicStart, musicStop, musicLayers, sfx, sirenStart, sirenStop, sirenPass, ambientSet, ambientStop, chopperStart, chopperStop } from './audio.js';
 import * as UI from './ui.js';
 
 /* ---------------- boot ---------------- */
@@ -101,6 +102,7 @@ function watchDistrict() {
   if (d === 'alley' || d === lastDistrict) return;
   lastDistrict = d;
   W.applyDistrict(d, false);
+  ambientSet(d);                        // the city's own sound follows the look
   const s = loadSave();
   s.discovered = s.discovered || ['block'];
   const isNew = !s.discovered.includes(d);
@@ -114,7 +116,11 @@ GAME.setCallbacks({
   callout: (text, kind) => UI.showCallout(text, kind),
   hud: (G, force) => UI.updateHud(G, force, GAME.multiplier(), GAME.totalScore()),
   tutorial: (msg, done) => UI.showTutorial(msg, done),
-  results: r => { UI.showResults(r); UI.refreshHome(); },
+  results: r => {
+    const d = DISTRICTS[GAME.currentDistrict()];
+    r.newsDistrict = d && d.label ? d.label : null;   // "…chase through Market Mile"
+    UI.showResults(r); UI.refreshHome();
+  },
   mesh: meshCb, meshSwap: meshSwapCb, prune: pruneCb,
   sfx: (name, arg) => sfx[name] && sfx[name](arg),
   fx: fxCb,
@@ -142,13 +148,14 @@ function onState(s) {
   document.body.classList.toggle('intro', s === STATES.COUNTDOWN);
   if (s === STATES.RUNNING) {
     musicStart(); UI.hideScreens();
+    ambientSet(lastDistrict);
     setTimeout(() => sirenStop(1.4), 900);      // wail into the getaway, then fade under music
   } else if (s === STATES.PAUSED) {
-    musicStop(); UI.showScreen('paused');
+    musicStop(); ambientStop(); UI.showScreen('paused');
   } else if (s === STATES.CRASHED) {
-    musicStop(); sirenStop(0.4);
+    musicStop(); sirenStop(0.4); ambientStop();
   } else if (s === STATES.HOME) {
-    musicStop(); sirenStop(0.4);
+    musicStop(); sirenStop(0.4); ambientStop();
   } else if (s === STATES.COUNTDOWN) {
     UI.hideScreens(); introT = TUNE.introDur; baseYView = 0; doorBurst = false;
     // timers still fire when rAF is starved, so this guarantees the hand-off
@@ -214,6 +221,8 @@ export function refreshPreview() {
   built.group.position.y = -1.15;               // centre the body in frame
   preview.rig.add(built.group);
   preview.parts = built.parts;
+  preview.charRig = built.rig;                  // skinned path: closet drives the mixer
+  if (built.rig) { RIG.play(built.rig, 'Walk'); }
 }
 function drawPreview(dt) {
   if (!preview.renderer || !document.getElementById('runner').classList.contains('show')) return;
@@ -228,6 +237,7 @@ function drawPreview(dt) {
   preview.camera.lookAt(0, 0.05, 0);
   // slow turntable + a gentle jog so shoes, trail colours and hats all read
   preview.rig.rotation.y += dt * 0.55;
+  if (preview.charRig) preview.charRig.mixer.update(dt);
   const p = preview.parts;
   if (p) {
     preview.phase += dt * 6.5;
@@ -265,6 +275,124 @@ let introFailsafe = null;
 const camPos = new THREE.Vector3(), lookAt = new THREE.Vector3(), pPos = new THREE.Vector3(), oPos = new THREE.Vector3();
 const smooth = t => t * t * (3 - 2 * t);
 const dogCameo = W.mkDogCameo(); W.scene.add(dogCameo); dogCameo.visible = false;
+
+/* ---------------- downtown drizzle ----------------
+   The downtown roads already carry a wet sheen (DISTRICTS.wet 0.45); this is
+   the rain that explains it. ~170 falling streaks kept in a box that wraps
+   around the camera, fading in and out with the district. View-only. */
+const RAIN_N = 170, RAIN_BOX = [30, 22, 34];
+let rain = null, rainVel = null, rainOp = 0;
+function ensureRain() {
+  if (rain) return;
+  const pos = new Float32Array(RAIN_N * 6);
+  rainVel = new Float32Array(RAIN_N);
+  for (let i = 0; i < RAIN_N; i++) {
+    rainVel[i] = 17 + Math.random() * 8;
+    pos[i * 6] = (Math.random() - 0.5) * RAIN_BOX[0];
+    pos[i * 6 + 1] = Math.random() * RAIN_BOX[1];
+    pos[i * 6 + 2] = (Math.random() - 0.5) * RAIN_BOX[2];
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  rain = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({
+    color: 0xb8c4d6, transparent: true, opacity: 0, depthWrite: false }));
+  rain.frustumCulled = false;
+  W.scene.add(rain);
+}
+function updateRain(dt, st) {
+  const want = (GAME.currentDistrict() === 'downtown' &&
+    (st === STATES.RUNNING || st === STATES.CRASHED)) ? 0.38 : 0;
+  rainOp += (want - rainOp) * (1 - Math.exp(-dt * 1.2));
+  if (!rain && rainOp < 0.01) return;
+  ensureRain();
+  rain.material.opacity = rainOp;
+  rain.visible = rainOp > 0.01;
+  if (!rain.visible) return;
+  const p = rain.geometry.attributes.position.array;
+  const cx = W.camera.position.x, cy = Math.max(6, W.camera.position.y), cz = W.camera.position.z;
+  const wrap = (v, c, size) => c + ((((v - c + size / 2) % size) + size) % size) - size / 2;
+  for (let i = 0; i < RAIN_N; i++) {
+    let x = p[i * 6], y = p[i * 6 + 1] - rainVel[i] * dt, z = p[i * 6 + 2];
+    x = wrap(x + dt * 1.2, cx, RAIN_BOX[0]);                       // a touch of wind
+    if (y < cy - RAIN_BOX[1] / 2) y += RAIN_BOX[1];
+    y = Math.min(y, cy + RAIN_BOX[1] / 2);
+    z = wrap(z, cz, RAIN_BOX[2]);
+    p[i * 6] = x; p[i * 6 + 1] = y; p[i * 6 + 2] = z;
+    p[i * 6 + 3] = x + 0.05; p[i * 6 + 4] = y - 0.75; p[i * 6 + 5] = z;
+  }
+  rain.geometry.attributes.position.needsUpdate = true;
+}
+
+/* ---------------- the NEWS 7 chopper ----------------
+   Pure view spectacle: once the chase has run long enough to make the evening
+   broadcast, a news helicopter flies in and ORBITS Jay with its nose camera on
+   him. In the dark districts its searchlight hunts the road around his feet.
+   It hovers to film the arrest if he goes down. The sim never knows. */
+const CHOPPER_AT = 750;                 // metres of chase before the press shows up
+const chopper = W.mkNewsChopper(); W.scene.add(chopper); chopper.visible = false;
+// beam + ground pool live in the SCENE: world-space aiming is a two-liner,
+// aiming a child cone in the banking chopper's local frame was not
+chopper.remove(chopper.userData.beam);
+W.scene.add(chopper.userData.beam); chopper.userData.beam.visible = false;
+chopper.userData.spot.visible = false; W.scene.add(chopper.userData.spot);
+const chop = { on: false, ang: 0, arriveT: 0 };
+const chopPos = new THREE.Vector3(), chopAim = new THREE.Vector3(), beamDir = new THREE.Vector3();
+const _up = new THREE.Vector3(0, 1, 0);
+function updateChopper(dt, st, pPos) {
+  const G = GAME.G;
+  const active = G && (st === STATES.RUNNING || st === STATES.CRASHED) && G.dist > CHOPPER_AT;
+  if (active && !chop.on) {
+    chop.on = true; chop.ang = Math.PI * 0.75; chop.arriveT = 2.2;
+    chopper.visible = true;
+    chopperStart();
+    UI.showCallout('📺 NEWS CHOPPER OVERHEAD!', 'shortcut');
+  } else if (!active && chop.on) {
+    chop.on = false;
+    chopper.visible = false;
+    chopper.userData.spot.visible = false; chopper.userData.beam.visible = false;
+    chopperStop(0.9);
+  }
+  if (!chop.on) return;
+
+  // orbit: slow circle around Jay; while crashed it holds a steady hover
+  chop.arriveT = Math.max(0, chop.arriveT - dt);
+  if (st === STATES.RUNNING) chop.ang += dt * 0.22;
+  const R = 17 + Math.sin(viewTime * 0.23) * 4;
+  const alt = 19 + Math.sin(viewTime * 0.31) * 1.6 + chop.arriveT * 10;   // flies DOWN into position
+  chopPos.set(
+    pPos.x + Math.cos(chop.ang) * (R + chop.arriveT * 14),
+    pPos.y + alt,
+    pPos.z + Math.sin(chop.ang) * (R + chop.arriveT * 14),
+  );
+  chopper.position.lerp(chopPos, 1 - Math.exp(-dt * 2.5));
+  // nose (and camera ball) on Jay; bank into the orbit
+  chopAim.set(pPos.x, pPos.y + 1, pPos.z);
+  chopper.lookAt(chopAim);
+  chopper.rotateZ(Math.sin(viewTime * 0.9) * 0.05 + (st === STATES.RUNNING ? 0.16 : 0.02));
+  const u = chopper.userData;
+  u.mainRotor.rotation.y += dt * 38;
+  u.tailRotor.rotation.x += dt * 55;
+  const blink = Math.floor(viewTime * 2.4) % 2 === 0;
+  u.strobeL.visible = blink; u.strobeR.visible = !blink;
+  // searchlight only when the district is dark enough to need one
+  const dk = DISTRICTS[GAME.currentDistrict()];
+  const dark = dk && dk.sun && dk.sun[1] < 0.5;
+  u.beam.visible = dark; u.spot.visible = dark;
+  if (dark) {
+    // the cameraman hunts: the pool wanders around Jay, catching him sometimes
+    u.spot.position.set(
+      pPos.x + Math.sin(viewTime * 0.7) * 2.4,
+      pPos.y + 0.06,
+      pPos.z + Math.cos(viewTime * 0.53) * 2.8 - 1);
+    // world-space cone from the belly to the pool: midpoint, stretch, aim
+    // (cone local +y is its narrow end, so +y points ground -> chopper)
+    beamDir.copy(chopper.position).sub(u.spot.position);
+    const len = beamDir.length();
+    u.beam.position.copy(u.spot.position).addScaledVector(beamDir, 0.5);
+    u.beam.scale.set(1, len, 1);
+    u.beam.quaternion.setFromUnitVectors(_up, beamDir.normalize());
+  }
+}
 const speedLinesEl = document.getElementById('speed-lines');
 const debugEl = document.getElementById('debug');
 let debugOn = false, fpsAvg = 60;
@@ -293,6 +421,41 @@ function updateDebug(dt) {
 const officers = [W.mkOfficer(), W.mkOfficer(), W.mkOfficer()];
 for (const o of officers) { W.scene.add(o); o.visible = false; }
 
+/* Once the skinned character lands, the capsule officers are replaced by
+   rigged ones — navy uniform, duty cap, real run cycle. The array slots are
+   swapped in place so the chase loop below never notices. */
+function mkRiggedOfficer(i) {
+  const r = RIG.createRigged({ skin: [0x9a6a4a, 0x7a4a2f, 0xb98a63][i % 3], top: 0x1a2440, pants: 0x161c2c, shoes: 0x22252c });
+  const capG = new THREE.Group();
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.5),
+    new THREE.MeshStandardMaterial({ color: 0x2a3a6e, roughness: 0.8 }));
+  dome.scale.set(0.145, 0.085, 0.155); dome.position.y = 0.03; capG.add(dome);
+  const peak = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.025, 0.13),
+    new THREE.MeshStandardMaterial({ color: 0x1c2947, roughness: 0.7 }));
+  peak.position.set(0, 0.015, 0.15); capG.add(peak);
+  const badge = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.012),
+    new THREE.MeshStandardMaterial({ color: 0xffd23c, roughness: 0.3, metalness: 0.4 }));
+  badge.position.set(0, 0.02, 0.145); capG.add(badge);
+  RIG.attachToBone(r, 'Head', capG, new THREE.Vector3(0, 0.24, 0));
+  const g = r.group;
+  g.add(W.blobShadow(0.8));
+  g.userData.rig = r;
+  RIG.play(r, 'Run');
+  r.actions.Run.time = i * 0.37;         // desync the strides or they march in lockstep
+  return g;
+}
+RIG.loadRig().then(ok => {
+  if (!ok) return;
+  for (let i = 0; i < officers.length; i++) {
+    const old = officers[i];
+    W.scene.remove(old);
+    const nu = mkRiggedOfficer(i);
+    nu.visible = false;
+    W.scene.add(nu);
+    officers[i] = nu;
+  }
+});
+
 function updateView(dt) {
   const G = GAME.G, st = GAME.getState();
   viewTime += dt;
@@ -316,7 +479,10 @@ function updateView(dt) {
   pPos.y = baseYView;
   const mesh = runnerMesh();
   mesh.position.set(pPos.x, pPos.y + G.py, pPos.z);
-  mesh.rotation.y = playerAng;
+  // Characters are modelled facing local +z (face, lean and arm bias all assume
+  // it) but the track runs toward -z at ang 0, so every track-aligned body needs
+  // the half turn. Without it they sprint down the street backwards.
+  mesh.rotation.y = playerAng + Math.PI;
 
   /* pose */
   if (st === STATES.CRASHED) poseRunner({ mode: 'crash', dt, time: viewTime, stumble: 0 });
@@ -355,8 +521,8 @@ function updateView(dt) {
   for (const l of G.letters) if (l.mesh && !l.taken) { l.mesh.rotation.y += dt * 2; l.mesh.position.y = 1.1 + Math.sin(viewTime * 3 + l.d) * 0.14; }
   for (const p of G.powsList) if (p.mesh && !p.taken) { p.mesh.rotation.y += dt * 2; p.mesh.position.y = 1.1 + Math.sin(viewTime * 3 + p.d) * 0.14; }
 
-  /* decor animation + party pulse */
-  W.animateSegments(G.segs, viewTime, G.partyT > 0 && !rm);
+  /* decor animation + party pulse (runner position feeds the pigeon scatter) */
+  W.animateSegments(G.segs, viewTime, G.partyT > 0 && !rm, pPos);
   document.body.classList.toggle('party', G.partyT > 0);
 
   /* particles + continuous party confetti */
@@ -379,12 +545,21 @@ function updateView(dt) {
     om.userData.lx = lerpNum(om.userData.lx ?? tLX, tLX, 1 - Math.exp(-dt * 4));
     GAME.worldPos(od, Math.max(-3, Math.min(3, om.userData.lx)), 0, oPos);
     om.position.copy(oPos);
-    om.rotation.y = playerAng;
-    const b = om.userData, ph = viewTime * 13 + i * 1.9;
-    b.legL.rotation.x = Math.sin(ph) * 1.05; b.legR.rotation.x = Math.sin(ph + Math.PI) * 1.05;
-    b.armL.rotation.x = Math.sin(ph + Math.PI) * 0.9 - 0.2; b.armR.rotation.x = Math.sin(ph) * 0.9 - 0.2;
-    b.body.position.y = Math.abs(Math.sin(ph)) * 0.06;
-    if (st === STATES.CRASHED && G.dieT > 0.5) b.body.rotation.x = 0.35; else b.body.rotation.x = 0.16;
+    om.rotation.y = playerAng + Math.PI;
+    if (om.userData.rig) {
+      const r = om.userData.rig;
+      // the arrest: when Jay is down and they've closed in, the lead officer
+      // throws the cuff-grab (Punch reads perfectly at chase distance)
+      if (st === STATES.CRASHED && G.dieT > 0.5) RIG.play(r, i === 0 ? 'Punch' : 'Idle');
+      else RIG.play(r, 'Run', { timeScale: 1.05 + i * 0.06 });
+      r.mixer.update(dt);
+    } else {
+      const b = om.userData, ph = viewTime * 13 + i * 1.9;
+      b.legL.rotation.x = Math.sin(ph) * 1.05; b.legR.rotation.x = Math.sin(ph + Math.PI) * 1.05;
+      b.armL.rotation.x = Math.sin(ph + Math.PI) * 0.9 - 0.2; b.armR.rotation.x = Math.sin(ph) * 0.9 - 0.2;
+      b.body.position.y = Math.abs(Math.sin(ph)) * 0.06;
+      if (st === STATES.CRASHED && G.dieT > 0.5) b.body.rotation.x = 0.35; else b.body.rotation.x = 0.16;
+    }
   }
   if (st === STATES.RUNNING) {
     whistleT -= dt;
@@ -401,11 +576,17 @@ function updateView(dt) {
     dogCameo.visible = true;
     GAME.worldPos(G.dist - 1.2, HALF + 1.3, 0, camPos);
     dogCameo.position.set(camPos.x, 0.24, camPos.z);
-    dogCameo.rotation.y = playerAng;
+    dogCameo.rotation.y = playerAng + Math.PI;
     const legs = dogCameo.userData.legs, ph = viewTime * 14;
     legs[0].rotation.x = Math.sin(ph) * 0.9; legs[1].rotation.x = Math.sin(ph) * 0.9;
     legs[2].rotation.x = Math.sin(ph + Math.PI) * 0.9; legs[3].rotation.x = Math.sin(ph + Math.PI) * 0.9;
   } else dogCameo.visible = false;
+
+  /* the press, once the chase is newsworthy */
+  updateChopper(dt, st, pPos);
+
+  /* the rain that explains downtown's wet roads */
+  updateRain(dt, st);
 
   /* camera — normal chase framing. During the opening it starts tighter and
      lower (over-the-shoulder, inside the lobby) and dollies out to the chase
@@ -420,6 +601,21 @@ function updateView(dt) {
   const high = 3.3 + 0.9 * ik;              // 4.2 → 3.3 chase
   camPos.set(pPos.x - fx * back, pPos.y + high + G.py * 0.35, pPos.z - fz * back);
   lookAt.set(pPos.x + fx * 9, pPos.y + 1.4 + G.py * 0.5, pPos.z + fz * 9);
+
+  /* the arrest deserves a camera: a slow orbit around Jay while the officers
+     close in and the chopper films from overhead. Starts exactly at the chase
+     position (a = camAng is "behind him"), so there is no cut — the camera
+     just begins to circle. The position lerp below does the smoothing. */
+  if (st === STATES.CRASHED) {
+    // the crashed window is 1.15s (game.js dieT), so the whole move must live
+    // inside it — an ease-out sweep that has done most of its arc by halfway
+    const t = Math.min(1, G.dieT / 1.1);
+    const e = 1 - (1 - t) * (1 - t);
+    const a = camAng + e * 1.25;                    // ~70° around the scene
+    const r = 6.4 - e * 1.7;                        // dollying gently in
+    camPos.set(pPos.x + Math.sin(a) * r, pPos.y + 2.7 - e * 1.0, pPos.z + Math.cos(a) * r);
+    lookAt.set(pPos.x, pPos.y + 0.9, pPos.z);
+  }
 
   /* The opening uses the ORDINARY chase camera — behind Jay, facing the way he
      runs. A front-facing cinematic made him read as running backwards and
