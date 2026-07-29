@@ -107,8 +107,47 @@ export function ambientSet(kind) {
   };
   AMB.timers.push(setTimeout(tick, 2500 + Math.random() * 4000));
 }
+/* ---- news chopper rotor ----
+   Whump-whump: lowpassed noise gated by a ~13Hz square LFO (the blade chop)
+   over a soft rotor hum. Own tracked node set, same teardown discipline as
+   the ambience bed. */
+const CHOP = { nodes: [], on: false };
+export function chopperStart() {
+  if (!A.ctx || CHOP.on) return;
+  CHOP.on = true;
+  const c = A.ctx, t = c.currentTime;
+  const len = c.sampleRate * 2, b = c.createBuffer(1, len, c.sampleRate), d = b.getChannelData(0);
+  let v = 0;
+  for (let i = 0; i < len; i++) { v = v * 0.96 + (Math.random() * 2 - 1) * 0.18; d[i] = v * 2.6; }
+  const src = c.createBufferSource(); src.buffer = b; src.loop = true;
+  const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 340;
+  const g = c.createGain(); g.gain.value = 0;                 // chopped by the LFO
+  const lfo = c.createOscillator(); lfo.type = 'square'; lfo.frequency.value = 12.5;
+  const lg = c.createGain(); lg.gain.value = 0.045;
+  const bias = c.createConstantSource(); bias.offset.value = 0.05;
+  lfo.connect(lg); lg.connect(g.gain); bias.connect(g.gain);
+  const hum = c.createOscillator(); hum.type = 'triangle'; hum.frequency.value = 52;
+  const hg = c.createGain(); hg.gain.setValueAtTime(0, t); hg.gain.linearRampToValueAtTime(0.03, t + 1.2);
+  const master = c.createGain(); master.gain.setValueAtTime(0, t);
+  master.gain.linearRampToValueAtTime(1, t + 1.5);            // flies in, fades in
+  src.connect(f); f.connect(g); g.connect(master);
+  hum.connect(hg); hg.connect(master);
+  master.connect(ambBus());
+  src.start(); lfo.start(); bias.start(); hum.start();
+  CHOP.nodes.push(src, f, g, lfo, lg, bias, hum, hg, master);
+}
+export function chopperStop(fade = 1.0) {
+  if (!A.ctx || !CHOP.on) return;
+  CHOP.on = false;
+  const master = CHOP.nodes[CHOP.nodes.length - 1], t = A.ctx.currentTime;
+  const nodes = CHOP.nodes; CHOP.nodes = [];
+  try { master.gain.cancelScheduledValues(t); master.gain.setValueAtTime(master.gain.value, t); master.gain.linearRampToValueAtTime(0, t + fade); } catch { /* ctx gone */ }
+  setTimeout(() => { for (const n of nodes) { try { n.stop && n.stop(); } catch { /* stopped */ } try { n.disconnect(); } catch { /* detached */ } } }, fade * 1000 + 80);
+}
+export function chopperOn() { return CHOP.on; }
+
 /* test hook: the bed's node graph is otherwise invisible from outside */
-export function ambientDebug() { return { kind: AMB.kind, nodes: AMB.nodes.length, timers: AMB.timers.length }; }
+export function ambientDebug() { return { kind: AMB.kind, nodes: AMB.nodes.length, timers: AMB.timers.length, chopper: CHOP.on }; }
 export function ambientStop() {
   for (const n of AMB.nodes) { try { n.stop && n.stop(); } catch { /* already stopped */ } try { n.disconnect(); } catch { /* detached */ } }
   AMB.nodes = [];

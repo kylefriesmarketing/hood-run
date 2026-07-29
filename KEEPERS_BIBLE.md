@@ -208,6 +208,18 @@ sun/wet/skyline, poles/wires/signals, pigeons/steam/clutter, rigged Jay +
 officers + bystanders (bank cops + sidewalk crowd), arrest animation, closet
 turntable. Zero known console errors; memory flat.
 
+NEWS 7 CHOPPER SHIPPED (v20): past 750m of chase, a procedural news
+helicopter (mkNewsChopper in world.js — rotors, blur disc, strobes, nose
+camera ball, NEWS 7 livery) flies in with a callout, ORBITS Jay with its
+nose kept on him (Object3D.lookAt aims +z — the facing convention pays off),
+banks into the turn, and in dark districts (sun intensity < 0.5) sweeps a
+searchlight: a ground pool that wanders around Jay + a world-space cone from
+the belly (beam/spot are SCENE children — aiming a child cone inside the
+banking chopper's local frame was a bug farm; world-space is a two-liner).
+Rotor audio = LFO-gated noise whump (chopperStart/Stop, tracked CHOP nodes,
+same teardown discipline as AMB). It hovers to film the arrest, resets on a
+fresh run. All view-only; updateChopper(dt, st, pPos) in updateView.
+
 City ambience SHIPPED (v19): per-district traffic-rumble bed (LFO-breathed
 brown noise) + crowd murmur (market/nightmarket) + distant horns/siren;
 `sfx.flap` on pigeon scatter (voice-capped — a flock is ONE flap) and

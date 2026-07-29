@@ -1011,6 +1011,77 @@ export function mkOfficer() {
   return g;
 }
 
+/* NEWS 7 helicopter — arrives once the chase has gone on long enough to make
+   the evening broadcast. Modelled facing +z like every creature here; the
+   view layer orbits it around Jay with the nose (and its camera ball) kept
+   ON him. userData: mainRotor/tailRotor spin, strobes blink, spot + beam are
+   the night searchlight (main.js aims them; hidden by day). */
+export function mkNewsChopper() {
+  const g = new THREE.Group();
+  const white = cmat(0xf0f2f4, { roughness: 0.5, metalness: 0.15 });
+  const red = cmat(0xd23c3c, { roughness: 0.55 });
+  const dark = cmat(0x22262c);
+
+  const body = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 10), white);
+  body.scale.set(0.85, 0.8, 1.6); body.position.y = 0.1; g.add(body);
+  const glass = new THREE.Mesh(new THREE.SphereGeometry(0.72, 10, 8),
+    new THREE.MeshStandardMaterial({ color: 0x9fd0e8, roughness: 0.15, metalness: 0.4 }));
+  glass.scale.set(0.95, 0.8, 0.9); glass.position.set(0, 0.22, 0.85); g.add(glass);
+  g.add(box(0.9, 0.34, 1.6, 0xd23c3c, 0, -0.12, -0.3, red));           // belly stripe
+  // "NEWS 7" on both flanks
+  const nt = markShared(texCache.news7 || (texCache.news7 = tex(96, 32, (gg, w, h) => {
+    gg.fillStyle = '#f0f2f4'; gg.fillRect(0, 0, w, h);
+    gg.fillStyle = '#d23c3c'; gg.font = 'bold 20px Arial'; gg.textAlign = 'center';
+    gg.fillText('NEWS 7', w / 2, 24);
+  })));
+  for (const s of [-1, 1]) {
+    const p = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 0.44),
+      new THREE.MeshStandardMaterial({ map: nt, roughness: 0.5 }));
+    p.position.set(s * 0.86, 0.12, -0.1); p.rotation.y = s * Math.PI / 2; g.add(p);
+  }
+  // tail boom + fin + tail rotor
+  g.add(box(0.22, 0.26, 2.4, 0xf0f2f4, 0, 0.24, -2.2, white));
+  g.add(box(0.08, 0.8, 0.5, 0xd23c3c, 0, 0.62, -3.3, red));
+  const tailRotor = new THREE.Group(); tailRotor.position.set(0.12, 0.62, -3.35);
+  tailRotor.add(box(0.04, 1.0, 0.1, 0x22262c, 0, 0, 0, dark));
+  tailRotor.add(box(0.04, 0.1, 1.0, 0x22262c, 0, 0, 0, dark));
+  g.add(tailRotor);
+  // main rotor: two blades + a spin-blur disc
+  const mainRotor = new THREE.Group(); mainRotor.position.y = 0.95;
+  g.add(box(0.14, 0.5, 0.14, 0x22262c, 0, 0.75, 0, dark));             // mast
+  mainRotor.add(box(0.24, 0.05, 7.4, 0x2a2e34, 0, 0, 0, dark));
+  mainRotor.add(box(7.4, 0.05, 0.24, 0x2a2e34, 0, 0, 0, dark));
+  const blur = new THREE.Mesh(new THREE.CircleGeometry(3.7, 24),
+    new THREE.MeshBasicMaterial({ color: 0x30343a, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false }));
+  blur.rotation.x = -Math.PI / 2; blur.position.y = 0.02; mainRotor.add(blur);
+  g.add(mainRotor);
+  // skids
+  for (const s of [-1, 1]) {
+    g.add(box(0.09, 0.09, 2.4, 0x3a3e44, s * 0.62, -0.78, 0, dark));
+    g.add(box(0.07, 0.45, 0.07, 0x3a3e44, s * 0.62, -0.55, 0.7, dark));
+    g.add(box(0.07, 0.45, 0.07, 0x3a3e44, s * 0.62, -0.55, -0.7, dark));
+  }
+  // nose camera ball — what the whole rig exists to point at Jay
+  const cam = new THREE.Mesh(new THREE.SphereGeometry(0.24, 10, 8), dark);
+  cam.position.set(0, -0.5, 1.15); g.add(cam);
+  g.add(box(0.1, 0.1, 0.16, 0x0e1014, 0, -0.5, 1.38, dark));           // lens
+  // nav strobes
+  const strobeL = box(0.09, 0.09, 0.09, 0, -0.9, 0.1, -0.2, new THREE.MeshBasicMaterial({ color: 0xff3a3a }));
+  const strobeR = box(0.09, 0.09, 0.09, 0, 0.9, 0.1, -0.2, new THREE.MeshBasicMaterial({ color: 0x3aff6a }));
+  g.add(strobeL); g.add(strobeR);
+  // night searchlight: a faint cone from the belly + a hot disc on the ground.
+  // Both are aimed/positioned by the view every frame; the disc is parented to
+  // the SCENE by the caller (it must hug the road, not ride the chopper).
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 2.6, 1, 12, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0xfff2c0, transparent: true, opacity: 0.1, side: THREE.DoubleSide, depthWrite: false }));
+  g.add(beam);
+  const spot = new THREE.Mesh(new THREE.CircleGeometry(2.6, 20),
+    new THREE.MeshBasicMaterial({ color: 0xfff2c0, transparent: true, opacity: 0.22, depthWrite: false }));
+  spot.rotation.x = -Math.PI / 2;
+  g.userData = { mainRotor, tailRotor, strobeL, strobeR, beam, spot };
+  return g;
+}
+
 /* City Trust Bank — an open-fronted LOBBY, not a slab. The run opens with the
    chase camera behind Jay inside this room, so it has to be hollow: doors
    already open, walls and ceiling around him, and enough depth that the camera

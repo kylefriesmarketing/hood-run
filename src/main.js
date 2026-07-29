@@ -15,7 +15,7 @@ import * as VFX from './vfx.js';
 import { createPostFX } from './postfx.js';
 import { initMissions } from './progression.js';
 import { attachInput, onAction } from './input.js';
-import { audioInit, audioResume, musicStart, musicStop, musicLayers, sfx, sirenStart, sirenStop, sirenPass, ambientSet, ambientStop } from './audio.js';
+import { audioInit, audioResume, musicStart, musicStop, musicLayers, sfx, sirenStart, sirenStop, sirenPass, ambientSet, ambientStop, chopperStart, chopperStop } from './audio.js';
 import * as UI from './ui.js';
 
 /* ---------------- boot ---------------- */
@@ -271,6 +271,77 @@ let introFailsafe = null;
 const camPos = new THREE.Vector3(), lookAt = new THREE.Vector3(), pPos = new THREE.Vector3(), oPos = new THREE.Vector3();
 const smooth = t => t * t * (3 - 2 * t);
 const dogCameo = W.mkDogCameo(); W.scene.add(dogCameo); dogCameo.visible = false;
+
+/* ---------------- the NEWS 7 chopper ----------------
+   Pure view spectacle: once the chase has run long enough to make the evening
+   broadcast, a news helicopter flies in and ORBITS Jay with its nose camera on
+   him. In the dark districts its searchlight hunts the road around his feet.
+   It hovers to film the arrest if he goes down. The sim never knows. */
+const CHOPPER_AT = 750;                 // metres of chase before the press shows up
+const chopper = W.mkNewsChopper(); W.scene.add(chopper); chopper.visible = false;
+// beam + ground pool live in the SCENE: world-space aiming is a two-liner,
+// aiming a child cone in the banking chopper's local frame was not
+chopper.remove(chopper.userData.beam);
+W.scene.add(chopper.userData.beam); chopper.userData.beam.visible = false;
+chopper.userData.spot.visible = false; W.scene.add(chopper.userData.spot);
+const chop = { on: false, ang: 0, arriveT: 0 };
+const chopPos = new THREE.Vector3(), chopAim = new THREE.Vector3(), beamDir = new THREE.Vector3();
+const _up = new THREE.Vector3(0, 1, 0);
+function updateChopper(dt, st, pPos) {
+  const G = GAME.G;
+  const active = G && (st === STATES.RUNNING || st === STATES.CRASHED) && G.dist > CHOPPER_AT;
+  if (active && !chop.on) {
+    chop.on = true; chop.ang = Math.PI * 0.75; chop.arriveT = 2.2;
+    chopper.visible = true;
+    chopperStart();
+    UI.showCallout('📺 NEWS CHOPPER OVERHEAD!', 'shortcut');
+  } else if (!active && chop.on) {
+    chop.on = false;
+    chopper.visible = false;
+    chopper.userData.spot.visible = false; chopper.userData.beam.visible = false;
+    chopperStop(0.9);
+  }
+  if (!chop.on) return;
+
+  // orbit: slow circle around Jay; while crashed it holds a steady hover
+  chop.arriveT = Math.max(0, chop.arriveT - dt);
+  if (st === STATES.RUNNING) chop.ang += dt * 0.22;
+  const R = 17 + Math.sin(viewTime * 0.23) * 4;
+  const alt = 19 + Math.sin(viewTime * 0.31) * 1.6 + chop.arriveT * 10;   // flies DOWN into position
+  chopPos.set(
+    pPos.x + Math.cos(chop.ang) * (R + chop.arriveT * 14),
+    pPos.y + alt,
+    pPos.z + Math.sin(chop.ang) * (R + chop.arriveT * 14),
+  );
+  chopper.position.lerp(chopPos, 1 - Math.exp(-dt * 2.5));
+  // nose (and camera ball) on Jay; bank into the orbit
+  chopAim.set(pPos.x, pPos.y + 1, pPos.z);
+  chopper.lookAt(chopAim);
+  chopper.rotateZ(Math.sin(viewTime * 0.9) * 0.05 + (st === STATES.RUNNING ? 0.16 : 0.02));
+  const u = chopper.userData;
+  u.mainRotor.rotation.y += dt * 38;
+  u.tailRotor.rotation.x += dt * 55;
+  const blink = Math.floor(viewTime * 2.4) % 2 === 0;
+  u.strobeL.visible = blink; u.strobeR.visible = !blink;
+  // searchlight only when the district is dark enough to need one
+  const dk = DISTRICTS[GAME.currentDistrict()];
+  const dark = dk && dk.sun && dk.sun[1] < 0.5;
+  u.beam.visible = dark; u.spot.visible = dark;
+  if (dark) {
+    // the cameraman hunts: the pool wanders around Jay, catching him sometimes
+    u.spot.position.set(
+      pPos.x + Math.sin(viewTime * 0.7) * 2.4,
+      pPos.y + 0.06,
+      pPos.z + Math.cos(viewTime * 0.53) * 2.8 - 1);
+    // world-space cone from the belly to the pool: midpoint, stretch, aim
+    // (cone local +y is its narrow end, so +y points ground -> chopper)
+    beamDir.copy(chopper.position).sub(u.spot.position);
+    const len = beamDir.length();
+    u.beam.position.copy(u.spot.position).addScaledVector(beamDir, 0.5);
+    u.beam.scale.set(1, len, 1);
+    u.beam.quaternion.setFromUnitVectors(_up, beamDir.normalize());
+  }
+}
 const speedLinesEl = document.getElementById('speed-lines');
 const debugEl = document.getElementById('debug');
 let debugOn = false, fpsAvg = 60;
@@ -459,6 +530,9 @@ function updateView(dt) {
     legs[0].rotation.x = Math.sin(ph) * 0.9; legs[1].rotation.x = Math.sin(ph) * 0.9;
     legs[2].rotation.x = Math.sin(ph + Math.PI) * 0.9; legs[3].rotation.x = Math.sin(ph + Math.PI) * 0.9;
   } else dogCameo.visible = false;
+
+  /* the press, once the chase is newsworthy */
+  updateChopper(dt, st, pPos);
 
   /* camera — normal chase framing. During the opening it starts tighter and
      lower (over-the-shoulder, inside the lobby) and dollies out to the chase
