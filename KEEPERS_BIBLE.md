@@ -208,6 +208,27 @@ sun/wet/skyline, poles/wires/signals, pigeons/steam/clutter, rigged Jay +
 officers + bystanders (bank cops + sidewalk crowd), arrest animation, closet
 turntable. Zero known console errors; memory flat.
 
+CITY FILL (v24) — "the city should feel full": three columns of building
+mass per side (FILL_COLS x 18/34/52, heights rising toward the skyline)
+fill the mid-ground between the frontline strip and the r95 skyline ring,
+in street, alley AND roof variant groups (roof fill y-compensates ROOF_H).
+Every box is corridorClear-checked (streets carve through the mass); each
+(side,column) chunk is one merged registered mesh removed whole if a
+later leg claims it. THE bornMax RULE (generalised from this work): every
+registry entry records the highest seg index alive at its build — only
+corridors born LATER may judge it, because everything older was already
+accommodated at placement. Swept buildings now also ZERO their vertex
+slice of the merged detail mesh (24 verts/box, ranges recorded at build)
+— without that their cornices and water towers hover over the new street;
+pole runs get range-only entries judged by owner-frame local rects.
+⚠️ PROBE TRAP that burned hours: a render-less test loop leaves matrixWorld
+STALE — raycasts hit phantom geometry at old/origin positions. Call
+scene.updateMatrixWorld(true) before raycasting, and remember Sprites need
+raycaster.camera set. Also: the chopper searchlight beam cone raycasts as
+grounded 19-tall geometry — exclude effects before declaring "wall in
+road". Final probe: 12,417 corridor samples across 3 seeds — 0 real
+obstructions (30 hits, all the searchlight beam).
+
 ⚠️ CORRIDOR SAFETY (v23) — "buildings in the road", root-caused: the
 generator LOOPS the path around city blocks (R,L,L,L) and only guarantees
 the ROADS don't overlap (observed clearance ~2 units), so decor placed by

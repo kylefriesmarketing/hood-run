@@ -1442,7 +1442,11 @@ function corridorClear(rect, segs, selfIndex) {
   }
   return true;
 }
-function registerBackdrop(mesh, ownerIndex) { backdropReg.push({ mesh, owner: ownerIndex }); mesh.userData.backdropOwner = ownerIndex; }
+let regBornMax = 0;   // highest seg index alive when the current build started
+function registerBackdrop(mesh, ownerIndex, detail = null) {
+  backdropReg.push({ mesh, owner: ownerIndex, bornMax: regBornMax, detail });
+  mesh.userData.backdropOwner = ownerIndex;
+}
 /* test hook: is a given mesh registered, and what does the registry hold? */
 export function backdropDebug(mesh) {
   return { size: backdropReg.length,
@@ -1457,15 +1461,92 @@ export function sweepNow(segs) {
 function sweepBackdrops(newSeg) {
   for (let i = backdropReg.length - 1; i >= 0; i--) {
     const e = backdropReg[i];
+    if (e.rangeOnly) {
+      // no mesh of its own: judge by its local rect in the owner's live frame,
+      // zero its slice of the merged detail if a new leg claims the ground
+      if (!e.detail.mesh.parent) { backdropReg.splice(i, 1); continue; }
+      if (newSeg.index <= e.bornMax) continue;
+      const wr = localRectToWorld(e.ownerSeg, e.localRect.x0, e.localRect.x1, e.localRect.z0, e.localRect.z1);
+      if (rectsOverlap(wr, segRect(newSeg))) {
+        const pos = e.detail.mesh.geometry.attributes.position;
+        for (let v = e.detail.v0; v < Math.min(e.detail.v1, pos.count); v++) pos.setXYZ(v, 0, -1, 0);
+        pos.needsUpdate = true;
+        backdropReg.splice(i, 1);
+      }
+      continue;
+    }
     if (!e.mesh.parent) { backdropReg.splice(i, 1); continue; }  // its segment pruned
-    if (e.owner === newSeg.index) continue;   // never sweep your own backdrop
+    /* every corridor that existed when this decor was built was already
+       accommodated at placement (skipped boxes / refused placement), so its
+       AABB may legitimately overlap those. Only corridors born LATER may
+       judge it — that one rule covers build-time and periodic sweeps alike. */
+    if (newSeg.index <= e.bornMax) continue;
+    e.mesh.updateWorldMatrix(true, false);    // Box3.setFromObject won't refresh stale parents
     _sweepBox.setFromObject(e.mesh);
     const r = segRect(newSeg);
     if (Math.min(_sweepBox.max.x, r.x1) - Math.max(_sweepBox.min.x, r.x0) > 0.2 &&
         Math.min(_sweepBox.max.z, r.z1) - Math.max(_sweepBox.min.z, r.z0) > 0.2) {
       e.mesh.parent.remove(e.mesh);
       disposeGroup(e.mesh);
+      // the building's slice of the merged detail goes with it — degenerate
+      // the triangles in place, or its cornice hovers over the new street
+      if (e.detail && e.detail.mesh.geometry) {
+        const pos = e.detail.mesh.geometry.attributes.position;
+        for (let v = e.detail.v0; v < Math.min(e.detail.v1, pos.count); v++) pos.setXYZ(v, 0, -1, 0);
+        pos.needsUpdate = true;
+      }
       backdropReg.splice(i, 1);
+    }
+  }
+}
+
+/* ---------------- mid-ground city fill ----------------
+   The corridor strip used to be the whole world: step out of the bank or look
+   over an alley wall and there was nothing until the skyline ring at r95.
+   Three columns of building mass per side fill the middle distance now,
+   heights rising toward the skyline. Every block checks the PATH first, so
+   streets carve themselves through the mass; each (side, column) chunk is one
+   merged registered mesh, so a corridor born after the chunk (bornMax rule)
+   removes the chunk it claims. */
+const FILL_COLS = [
+  { x: 18, h0: 10, h1: 20 },
+  { x: 34, h0: 12, h1: 26 },
+  { x: 52, h0: 16, h1: 34 },
+];
+function buildCityFill(g, seg, d, opts, isRoof) {
+  const L = seg.len;
+  const yOff = isRoof ? -ROOF_H : 0;   // roof groups sit at ROOF_H; fill stands on the ground
+  const base = new THREE.Color(d.brickset[0]);
+  const dd = opts.decorDensity ?? 1;
+  const turnSide = seg.exit === 'R' ? 1 : seg.exit === 'L' ? -1 : 0;
+  for (const side of [-1, 1]) {
+    // the turn side hosts the next street just past the junction — stop early
+    const endD = (side === turnSide) ? L - 20 : L - 2;
+    for (const col of FILL_COLS) {
+      const B2 = makeBuilder();
+      let dpos = rand(0, 4);
+      while (dpos + 10 < endD) {
+        const w = rand(10, 18), gap = rand(2, 6) / Math.max(0.5, dd);
+        if (dpos + w > endD) break;
+        const cx = side * (col.x + rand(-2, 2));
+        const h = rand(col.h0, col.h1), dp = rand(9, 13);
+        if (corridorClear(localRectToWorld(seg, cx - dp / 2, cx + dp / 2, -(dpos + w), -dpos), opts.segs, seg.index)) {
+          const c = base.clone().multiplyScalar(0.42 + Math.random() * 0.3);
+          c.offsetHSL(rand(-0.02, 0.02), rand(-0.05, 0.05), 0);
+          const colr = c.getHex();
+          B2.box(dp, h, w, cx, yOff + h / 2, -(dpos + w / 2), colr);                       // mass
+          B2.box(dp * 0.92, 0.9, w * 0.92, cx, yOff + h + 0.4, -(dpos + w / 2), c.multiplyScalar(0.78).getHex());  // parapet
+          if (Math.random() < 0.4)                                                          // roof unit
+            B2.box(2, rand(1.2, 2.4), 2, cx + rand(-2, 2), yOff + h + 1.4, -(dpos + w / 2) + rand(-3, 3), 0x4a4e56);
+        }
+        dpos += w + gap;
+      }
+      if (B2.count()) {
+        const m = new THREE.Mesh(B2.build(), detailMaterial());
+        m.userData.ownGeo = true;
+        g.add(m);
+        registerBackdrop(m, seg.index);
+      }
     }
   }
 }
@@ -1474,6 +1555,8 @@ function sweepBackdrops(newSeg) {
 export function buildSegment(seg, opts) {
   // fresh run: the old world is torn down, so the registry starts clean too
   if (seg.index === 0) backdropReg.length = 0;
+  // decor registered during this build knows every segment alive right now
+  regBornMax = opts.segs ? opts.segs.reduce((m, s) => Math.max(m, s.index), seg.index) : seg.index;
   // a new leg of the path claims its right of way (rule 2 above)
   sweepBackdrops(seg);
   // opts: { district, first, alley, split, contrast, decorDensity }
@@ -1546,6 +1629,8 @@ export function buildSegment(seg, opts) {
       g.userData.policeLights = lights;
     }
   }
+
+  buildCityFill(g, seg, d, opts, isRoof);
 
   if (isRoof) buildRooftopDressing(g, seg, d, opts);
   else if (seg.alley) buildAlleyDressing(g, seg, d, opts);
@@ -1796,6 +1881,8 @@ function addFacadeRelief(B, layout, side, dpos, w, h) {
 function buildStreetDressing(g, seg, d, opts, dd) {
   const L = seg.len;
   const B = makeBuilder();          // one merged detail mesh for the whole block
+  const pendingBld = [];            // buildings + their box ranges in B, registered once B builds
+  const pendingRange = [];          // range-only entries (pole runs) — zeroed, never removed as meshes
   // The next segment's road turns into the INSIDE corner of this junction, so
   // keep that side clear near the exit or buildings/props poke into the street.
   const turnSide = seg.exit === 'R' ? 1 : seg.exit === 'L' ? -1 : 0;
@@ -1865,11 +1952,15 @@ function buildStreetDressing(g, seg, d, opts, dd) {
            w (9..15), which left ragged gaps between neighbours. */
         bld.scale.set(w, h, depth);
         g.add(bld);
-        // corridor rule 2: if a later loop leg claims this ground, the sweep
-        // removes the building (its merged relief stays — thin, acceptable)
-        registerBackdrop(bld, seg.index);
+        /* corridor rule 2: if a later loop leg claims this ground the sweep
+           removes the building — AND its share of the merged detail, or its
+           cornice and water tower stay hovering 15m over the new street.
+           The box range in the builder is recorded now, resolved to a vertex
+           range once the merged mesh exists (each box is 24 verts). */
+        const detailStart = B.count();
         addBuildingDetail(B, side, dpos, w, h, depth, d, faceTex.userData.layout);
         addFacadeRelief(B, faceTex.userData.layout, side, dpos, w, h);
+        pendingBld.push({ mesh: bld, b0: detailStart, b1: B.count() });
         if (Math.random() < 0.25 * dd && !d.decor?.glass) { const fe = mkFireEscape(); fe.position.set(side * (WALL_X - 0.5), 0, -(dpos + w / 2)); fe.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2; g.add(fe); }
         if (d.decor?.stoops && Math.random() < 0.35 * dd) { const st = mkStoop(); st.position.set(side * (WALL_X - 0.9), 0.24, -(dpos + w / 2)); st.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2; g.add(st); }
         if (d.decor?.neon && Math.random() < 0.6 * dd) {          // glowing shopfront neon
@@ -1894,11 +1985,17 @@ function buildStreetDressing(g, seg, d, opts, dd) {
     // streetlights — the sagging wires are half the reason a street reads urban
     if (side < 0 && !d.decor?.glass) {
       const px2 = side * (HALF + SIDE_W - 0.35);
+      const poleB0 = B.count();
       const poleZ = [];
       for (let d2 = 18; d2 < propEnd; d2 += 17) { addUtilityPole(B, px2, -d2); poleZ.push(-d2); }
       for (let i = 0; i + 1 < poleZ.length; i++)
         for (const xo of [-0.55, 0, 0.55])
           addWireSpan(B, px2 + xo, 6.95, poleZ[i], poleZ[i + 1]);
+      // range-registered like buildings: a loop leg crossing this kerb line
+      // must not leave poles and wires floating over its street
+      if (poleZ.length)
+        pendingRange.push({ b0: poleB0, b1: B.count(),
+          localRect: { x0: px2 - 1.1, x1: px2 + 1.1, z0: poleZ[poleZ.length - 1] - 1, z1: poleZ[0] + 1 } });
     }
     for (let d2 = rand(8, 20); d2 < propEnd; d2 += rand(13, 24) / dd) {
       const roll = Math.random();
@@ -1982,11 +2079,20 @@ function buildStreetDressing(g, seg, d, opts, dd) {
 
   // emit the whole block's architectural detail as a single mesh
   const detailGeo = B.build();
+  let dm = null;
   if (detailGeo) {
-    const dm = new THREE.Mesh(detailGeo, detailMaterial());
+    dm = new THREE.Mesh(detailGeo, detailMaterial());
     dm.userData.ownGeo = true;
     g.add(dm);
   }
+  // register buildings WITH their slice of the merged detail (24 verts/box),
+  // so a sweep removes cornice + relief together with the walls
+  for (const p of pendingBld)
+    registerBackdrop(p.mesh, seg.index, dm ? { mesh: dm, v0: p.b0 * 24, v1: p.b1 * 24 } : null);
+  // pole runs: no mesh of their own — a sweep zeroes their vertex slice
+  if (dm) for (const p of pendingRange)
+    backdropReg.push({ rangeOnly: true, ownerSeg: seg, owner: seg.index, bornMax: regBornMax,
+      localRect: p.localRect, detail: { mesh: dm, v0: p.b0 * 24, v1: p.b1 * 24 } });
 }
 
 /* rooftop route: tar-and-gravel deck, parapets, water tower, skyline below */
