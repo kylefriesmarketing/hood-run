@@ -1103,6 +1103,48 @@ export function mkNewsChopper() {
   return g;
 }
 
+/* Elevated rail — a girder bridge over the street with a lit metro train
+   that rumbles across every so often. Deck at 7.2: clear of the tallest jump,
+   under the chopper. The train starts hidden; animateSegments drives the
+   crossing. Registered as backdrop so a loop leg sweeps the whole bridge. */
+export function mkElBridge() {
+  const g = new THREE.Group();
+  const steel = cmat(0x2e3833, { roughness: 0.7, metalness: 0.25 });
+  const rust = cmat(0x5a4638, { roughness: 0.9 });
+  const SPAN = 30, DECK_Y = 7.2;
+  // deck + twin girder walls with lattice cross-braces
+  g.add(box(SPAN, 0.35, 3.6, 0x2e3833, 0, DECK_Y, 0, steel));
+  for (const s of [-1, 1]) {
+    g.add(box(SPAN, 1.1, 0.16, 0x2e3833, 0, DECK_Y + 0.7, s * 1.8, steel));
+    for (let x = -SPAN / 2 + 1.5; x < SPAN / 2; x += 3)
+      g.add(box(0.14, 1.0, 0.14, 0x5a4638, x, DECK_Y + 0.65, s * 1.8, rust));
+  }
+  // rails
+  for (const s of [-1, 1]) g.add(box(SPAN, 0.09, 0.12, 0x8a8f96, 0, DECK_Y + 0.22, s * 0.7));
+  // kerb piers — outside the lanes, like the streetlights
+  for (const px of [-(HALF + 1.5), HALF + 1.5]) {
+    g.add(box(0.6, DECK_Y, 0.9, 0x3a423d, px, DECK_Y / 2, 0, steel));
+    g.add(box(1.2, 0.4, 1.3, 0x2e3833, px, DECK_Y - 0.2, 0, steel));   // cap
+  }
+  // the train: three lit cars, hidden until its moment
+  const train = new THREE.Group();
+  const body = cmat(0x9aa2ab, { roughness: 0.4, metalness: 0.35 });
+  const winM = new THREE.MeshBasicMaterial({ color: 0xffedb8 });
+  for (let c = 0; c < 3; c++) {
+    const cx = (c - 1) * 6.6;
+    train.add(box(6.2, 1.7, 2.4, 0x9aa2ab, cx, 0, 0, body));
+    train.add(box(6.3, 0.28, 2.5, 0x2a4a8e, cx, -0.75, 0, cmat(0x2a4a8e)));  // skirt stripe
+    const win = box(5.4, 0.5, 0.06, 0, cx, 0.25, 1.21, winM); train.add(win);
+    const win2 = box(5.4, 0.5, 0.06, 0, cx, 0.25, -1.21, winM); train.add(win2);
+  }
+  train.position.set(0, DECK_Y + 1.35, 0);
+  train.visible = false;
+  g.add(train);
+  g.userData.train = train;
+  g.userData.trainState = { next: 6 + Math.random() * 14, t: 0, dir: 1, running: false };
+  return g;
+}
+
 /* City Trust Bank — an open-fronted LOBBY, not a slab. The run opens with the
    chase camera behind Jay inside this room, so it has to be hollow: doors
    already open, walls and ceiling around him, and enough depth that the camera
@@ -2068,6 +2110,17 @@ function buildStreetDressing(g, seg, d, opts, dd) {
     g.userData.bulbs = bulbs;
   }
 
+  // the El: a girder bridge mid-block on some streets, train dormant until
+  // animateSegments sends one across
+  if (!seg.alley && L > 55 && Math.random() < 0.3) {
+    const bz = -rand(L * 0.35, L * 0.62);
+    const el = mkElBridge();
+    el.position.set(0, 0, bz);
+    g.add(el);
+    registerBackdrop(el, seg.index);
+    (g.userData.els = g.userData.els || []).push(el);
+  }
+
   // traffic signals where the street meets the junction, arms over the kerb
   if (!seg.alley) {
     for (const s of (seg.exit === 'S' ? [-1, 1] : [seg.exit === 'L' ? 1 : -1])) {
@@ -2258,6 +2311,26 @@ export function animateSegments(segs, time, party, runnerPos) {
           for (const w of u.wings) w.rotation.z = Math.sign(w.position.x) * (0.2 + Math.sin(time * 40 + u.ph) * 0.9);
           if (p.position.y > 14) { p.visible = false; u.state = 'gone'; }
         }
+      }
+    }
+    if (g.userData.els) for (const el of g.userData.els) {
+      const ts = el.userData.trainState, tr = el.userData.train;
+      if (!ts.running) {
+        ts.next -= dt;
+        if (ts.next <= 0) {
+          ts.running = true; ts.t = 0; ts.dir = Math.random() < 0.5 ? 1 : -1;
+          tr.visible = true;
+          if (runnerPos) {                       // horn + rumble, attenuated by distance
+            _pl.copy(runnerPos); g.worldToLocal(_pl);
+            const d2 = Math.hypot(_pl.x - el.position.x, _pl.z - el.position.z);
+            if (d2 < 90) sfx.train(Math.max(0.15, 1 - d2 / 90));
+          }
+        }
+      } else {
+        ts.t += dt;
+        const x = ts.dir * (-26 + ts.t * 16);    // 52-unit crossing at 16/s
+        tr.position.x = x;
+        if (Math.abs(x) > 26) { ts.running = false; tr.visible = false; ts.next = 14 + Math.random() * 18; }
       }
     }
     if (g.userData.grates) for (const sg of g.userData.grates) {

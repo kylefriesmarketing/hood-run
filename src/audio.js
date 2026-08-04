@@ -316,5 +316,28 @@ export const sfx = {
   steam(vol = 1) {                      // passing a breathing grate
     if (A.ctx) noiseTo(A.sfxBus, A.ctx.currentTime, 0.5, 2800, 'highpass', 0.055 * vol);
   },
+  train(vol = 1) {                      // the El crossing overhead
+    if (!A.ctx) return;
+    const c = A.ctx, t = c.currentTime;
+    // long low rumble swelling through the crossing
+    const len = c.sampleRate * 3.4, b = c.createBuffer(1, len, c.sampleRate), d = b.getChannelData(0);
+    let v = 0;
+    for (let i = 0; i < len; i++) { v = v * 0.985 + (Math.random() * 2 - 1) * 0.09; d[i] = v * 4; }
+    const src = c.createBufferSource(); src.buffer = b;
+    const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 150;
+    const g = c.createGain();
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.16 * vol, t + 0.7);
+    g.gain.setValueAtTime(0.16 * vol, t + 2.2); g.gain.linearRampToValueAtTime(0, t + 3.4);
+    src.connect(f); f.connect(g); g.connect(A.sfxBus); src.start(t); src.stop(t + 3.4);
+    // two-tone horn as it enters
+    for (const [fr, dt2] of [[311, 0], [370, 0.02]]) {
+      const o = c.createOscillator(); o.type = 'square'; o.frequency.value = fr;
+      const f2 = c.createBiquadFilter(); f2.type = 'lowpass'; f2.frequency.value = 900;
+      const hg = c.createGain();
+      hg.gain.setValueAtTime(0, t + dt2); hg.gain.linearRampToValueAtTime(0.05 * vol, t + dt2 + 0.06);
+      hg.gain.setValueAtTime(0.05 * vol, t + dt2 + 0.5); hg.gain.linearRampToValueAtTime(0, t + dt2 + 0.7);
+      o.connect(f2); f2.connect(hg); hg.connect(A.sfxBus); o.start(t + dt2); o.stop(t + dt2 + 0.75);
+    }
+  },
   bounce() { duck(0.35, 0.12, 0.3); blip(180, 0.14, 'sine', 0.24, 260); setTimeout(() => blip(240, 0.12, 'sine', 0.18, 200), 130); },
 };

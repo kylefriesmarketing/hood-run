@@ -208,6 +208,14 @@ sun/wet/skyline, poles/wires/signals, pigeons/steam/clutter, rigged Jay +
 officers + bystanders (bank cops + sidewalk crowd), arrest animation, closet
 turntable. Zero known console errors; memory flat.
 
+THE EL (v25): mkElBridge — girder bridge over the road (deck 7.2: clear of
+jumps, under the chopper), kerb piers, on ~30% of street segments (mid-
+block, non-alley/roof, L>55), registered as backdrop so loop legs sweep
+it. A 3-car lit metro train crosses on a timer (state machine in
+animateSegments, hidden→run→hidden, 14–30s cadence, random direction),
+with sfx.train (3.4s lowpass rumble + two-tone horn), distance-attenuated
+via the runner position already flowing into animateSegments.
+
 CITY FILL (v24) — "the city should feel full": three columns of building
 mass per side (FILL_COLS x 18/34/52, heights rising toward the skyline)
 fill the mid-ground between the frontline strip and the r95 skyline ring,
