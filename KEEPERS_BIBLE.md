@@ -216,6 +216,22 @@ animateSegments, hidden→run→hidden, 14–30s cadence, random direction),
 with sfx.train (3.4s lowpass rumble + two-tone horn), distance-attenuated
 via the runner position already flowing into animateSegments.
 
+NIGHT LIFE (v28): streetlamps throw a real POOL on the road plus a halo
+sprite on the head (both additive, both ONE shared material each so the
+night lerp raises every lamp in the city with a single opacity write);
+neon signs bleed a stretched colour smear onto the wet pavement (per-sign
+tint, no night fade needed — neon only exists in the always-dark
+nightmarket; the caller drops it to road level since it knows the sign
+height, and -x rotation stays horizontal through the later Y-rotation);
+and 14 sheets of newspaper tumble down the street, wrap-boxed around the
+player like the rain, so something is always moving in frame.
+⚠️ TRAP hit while building this: the pool material was created through a
+local cache object while setLights checked a module variable that was
+never assigned — the pools stayed invisible and the numbers said 0 with
+no error. If a shared-material effect reads dead, check the WRITE target
+is the same object as the READ target. Also: radialTex() allocates a
+canvas per call, so build glow materials ONCE (there is a lamp every 17m).
+
 GRID WINDOWS + BUILD STAMP (v27): the grid gets its own material —
 vertex-coloured mass plus an emissive window map (geo.js copies the unit
 box's 0..1 UVs onto every merged box, so each face gets one tile of the

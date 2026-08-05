@@ -234,6 +234,14 @@ function setLights(v) {
     // the mid-ground city lights up with the district, like the skyline does
     cityGridMat.emissiveIntensity = 0.04 + (v.winLit ?? 0.1) * 1.15;
   }
+  /* Streetlamps only throw a visible pool once the district is dark enough to
+     see it — in daylight a glowing disc on the road reads as a bug. One write
+     per material lights every lamp in the city. */
+  {
+    const night = nightOf(v.winLit);
+    if (lampPoolMat) lampPoolMat.opacity = night * 0.5;
+    if (lampHazeMat) lampHazeMat.opacity = night * 0.75;
+  }
   if (skylineMat && v.winLit !== undefined) {
     curWinLit = v.winLit;
     // silhouettes a shade darker than the fog they stand in, windows brighter
@@ -694,11 +702,57 @@ function mkTree() {
   fol.position.y = 2.3; fol.scale.y = 0.9; fol.userData.sway = 0.05; g.add(fol);
   return g;
 }
+/* Additive glows that only exist after dark. All of them share ONE material
+   per kind, so the night lerp can raise every lamp pool in the city with a
+   single opacity write instead of walking the scene graph. */
+let lampPoolMat = null, lampHazeMat = null;
+/* both are built lazily on the first streetlight, which happens AFTER the
+   opening district is lit — so seed them from the level already in effect */
+const nightOf = wl => Math.max(0, Math.min(1, ((wl ?? 0.1) - 0.1) / 0.5));
+function radialTex(inner, mid) {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const gr = g.createRadialGradient(32, 32, 1, 32, 32, 31);
+  gr.addColorStop(0, inner); gr.addColorStop(0.45, mid); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+  return markShared(new THREE.CanvasTexture(c));
+}
+const _neonSmear = {};
+
 function mkStreetlight() {
   const g = new THREE.Group();
   g.add(box(0.12, 5.2, 0.12, 0x3a4048, 0, 2.6, 0));
   g.add(box(1.4, 0.1, 0.12, 0x3a4048, -0.65, 5.15, 0));
   g.add(box(0.5, 0.16, 0.3, 0, -1.25, 5.05, 0, new THREE.MeshBasicMaterial({ color: 0xf2ede0 })));
+  // the pool of light it actually throws — the single biggest night cue.
+  // Build the material (and its texture) ONCE: radialTex allocates a canvas,
+  // and there is one of these lamps every 17 metres of city.
+  if (!lampPoolMat) {
+    lampPoolMat = new THREE.MeshBasicMaterial({
+      map: radialTex('rgba(255,236,190,.85)', 'rgba(255,225,160,.28)'), color: 0xffe6b0,
+      transparent: true, opacity: nightOf(curWinLit) * 0.5,
+      blending: THREE.AdditiveBlending, depthWrite: false });
+    lampPoolMat.__shared = true;
+  }
+  const pool = new THREE.Mesh(markShared(new THREE.PlaneGeometry(1, 1)), lampPoolMat);
+  pool.rotation.x = -Math.PI / 2;
+  pool.position.set(-1.25, 0.05, 0);
+  pool.scale.setScalar(7.5);
+  pool.renderOrder = 3;
+  g.add(pool);
+  // a soft halo on the lamp head so the source itself blooms. Scale lives on
+  // the Sprite, not the material, so every lamp in the city shares one.
+  if (!lampHazeMat) {
+    lampHazeMat = new THREE.SpriteMaterial({
+      map: radialTex('rgba(255,240,205,.9)', 'rgba(255,225,150,.25)'), color: 0xffe6b0,
+      transparent: true, opacity: nightOf(curWinLit) * 0.75,
+      blending: THREE.AdditiveBlending, depthWrite: false });
+    lampHazeMat.__shared = true;
+  }
+  const haze = new THREE.Sprite(lampHazeMat);
+  haze.scale.setScalar(2.6);
+  haze.position.set(-1.25, 5.05, 0);
+  g.add(haze);
   return g;
 }
 /* corner signal: pole + arm reaching over the kerb, head facing the runner.
@@ -934,6 +988,21 @@ function mkNeonSign() {
     g.fillText(pick(words), w / 2, h / 2 + 9);
   });
   const m = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 1.0), new THREE.MeshBasicMaterial({ map: t, transparent: true }));
+  /* The sign bleeds onto the wet pavement below it. Neon only ever appears in
+     the nightmarket, which is always dark and always wet, so this needs no
+     night fade — it is simply on. Rotating -x keeps it horizontal through the
+     caller's later Y-rotation, and the caller drops it to road level once it
+     knows the sign's height. */
+  if (!_neonSmear.tex) _neonSmear.tex = radialTex('rgba(255,255,255,.85)', 'rgba(255,255,255,.25)');
+  const smear = new THREE.Mesh(markShared(new THREE.PlaneGeometry(1, 1)),
+    new THREE.MeshBasicMaterial({ map: _neonSmear.tex, color: col, transparent: true,
+      opacity: 0.42, blending: THREE.AdditiveBlending, depthWrite: false }));
+  smear.rotation.x = -Math.PI / 2;
+  smear.scale.set(3.0, 7.5, 1);            // stretched away from the wall like a reflection
+  smear.position.set(0, -2.9, 1.4);
+  smear.renderOrder = 3;
+  m.add(smear);
+  m.userData.smear = smear;
   return m;
 }
 /* Fixed outfit combos, NOT a free cross-product: every combo bakes a coloured
@@ -2086,8 +2155,11 @@ function buildStreetDressing(g, seg, d, opts, dd) {
         if (d.decor?.stoops && Math.random() < 0.35 * dd) { const st = mkStoop(); st.position.set(side * (WALL_X - 0.9), 0.24, -(dpos + w / 2)); st.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2; g.add(st); }
         if (d.decor?.neon && Math.random() < 0.6 * dd) {          // glowing shopfront neon
           const ns = mkNeonSign();
-          ns.position.set(side * (WALL_X - 0.15), rand(2.4, 3.6), -(dpos + rand(2, Math.max(2.2, w - 2))));
-          ns.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2; ns.userData.ownGeo = true; g.add(ns);
+          const nh = rand(2.4, 3.6);
+          ns.position.set(side * (WALL_X - 0.15), nh, -(dpos + rand(2, Math.max(2.2, w - 2))));
+          ns.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2; ns.userData.ownGeo = true;
+          if (ns.userData.smear) ns.userData.smear.position.y = -nh + 0.07;   // land it on the road
+          g.add(ns);
         }
         if (d.decor?.posters && Math.random() < 0.5 * dd) {
           const po = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 1.2), new THREE.MeshBasicMaterial({ map: posterTex() }));

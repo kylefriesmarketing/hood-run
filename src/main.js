@@ -327,6 +327,68 @@ function updateRain(dt, st) {
   rain.geometry.attributes.position.needsUpdate = true;
 }
 
+/* ---------------- blowing litter ----------------
+   A city is never still. A dozen sheets of newspaper tumble down the street
+   in the wind, wrapping around the camera the way the rain does, so there is
+   always something moving in frame even on an empty block. View-only. */
+const LITTER_N = 14;
+let litter = null, litterState = null;
+function ensureLitter() {
+  if (litter) return;
+  const tex = (() => {
+    const c = document.createElement('canvas'); c.width = c.height = 32;
+    const g = c.getContext('2d');
+    g.fillStyle = '#e8e4d8'; g.fillRect(2, 4, 28, 24);
+    g.fillStyle = '#b9b3a4';
+    for (let y = 8; y < 26; y += 4) g.fillRect(5, y, 22, 1.5);      // lines of print
+    g.fillStyle = '#8e8778'; g.fillRect(5, 6, 12, 2);
+    return new THREE.CanvasTexture(c);
+  })();
+  const mat = new THREE.MeshStandardMaterial({
+    map: tex, transparent: true, side: THREE.DoubleSide, roughness: 0.95 });
+  litter = new THREE.Group();
+  litterState = [];
+  for (let i = 0; i < LITTER_N; i++) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(0.32, 0.24), mat);
+    litter.add(m);
+    litterState.push({
+      m, y: 0.1 + Math.random() * 0.6,
+      vx: 0, vz: 0, spin: new THREE.Vector3(), t: Math.random() * 10,
+    });
+  }
+  W.scene.add(litter);
+}
+function updateLitter(dt, st, pPos) {
+  if (st !== STATES.RUNNING && st !== STATES.COUNTDOWN && st !== STATES.CRASHED) {
+    if (litter) litter.visible = false;
+    return;
+  }
+  ensureLitter();
+  litter.visible = true;
+  const SPAN = 26;
+  for (const p of litterState) {
+    p.t += dt;
+    const m = p.m;
+    // wind pushes it along the street with a lazy sideways wander
+    const gust = 1 + Math.sin(p.t * 0.7) * 0.5;
+    m.position.x += (Math.sin(p.t * 1.3) * 1.6) * dt * gust;
+    m.position.z += (3.5 + Math.sin(p.t * 0.9) * 2.2) * dt * gust;
+    // skitter: mostly scraping the ground, occasionally lifted by a gust
+    p.y += (Math.sin(p.t * 2.1) * 0.9 - (p.y - 0.25) * 2.2) * dt;
+    m.position.y = Math.max(0.06, p.y);
+    m.rotation.x += dt * 3.1; m.rotation.z += dt * 2.3; m.rotation.y += dt * 1.7;
+    // wrap around the player so the street is never bare
+    const dx = m.position.x - pPos.x, dz = m.position.z - pPos.z;
+    if (Math.abs(dx) > SPAN || Math.abs(dz) > SPAN || m.position.y > 6) {
+      m.position.set(
+        pPos.x + (Math.random() - 0.5) * SPAN * 1.4,
+        0.1 + Math.random() * 0.4,
+        pPos.z - SPAN * (0.5 + Math.random() * 0.5));
+      p.y = m.position.y;
+    }
+  }
+}
+
 /* ---------------- the NEWS 7 chopper ----------------
    Pure view spectacle: once the chase has run long enough to make the evening
    broadcast, a news helicopter flies in and ORBITS Jay with its nose camera on
@@ -594,6 +656,9 @@ function updateView(dt) {
 
   /* the city all around the lanes — one chunk built per frame */
   W.updateCityGrid(G.segs, pPos.x, pPos.z, GAME.currentDistrict());
+
+  /* paper blowing down the street: something always moving in frame */
+  updateLitter(dt, st, pPos);
 
   /* camera — normal chase framing. During the opening it starts tighter and
      lower (over-the-shoulder, inside the lobby) and dollies out to the chase
