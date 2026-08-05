@@ -2,6 +2,10 @@
    All tuning constants, hazard defs, district defs, patterns, missions,
    cosmetics, power-ups. No magic numbers elsewhere. */
 
+/* Shown on the home screen. Bump it WITH sw.js's CACHE on every deploy — it is
+   how you tell a stale service-worker shell from a real bug. */
+export const BUILD = 'v27';
+
 export const LANE_W = 2.2, ROAD_W = 8, HALF = ROAD_W / 2, SIDE_W = 3.2;
 export const WALL_X = HALF + SIDE_W;
 

@@ -230,6 +230,10 @@ function snapLights() {
 function setLights(v) {
   curSky.copy(v.sky);
   if (v.sunOff) curSunOff.copy(v.sunOff);
+  if (cityGridMat && v.winLit !== undefined) {
+    // the mid-ground city lights up with the district, like the skyline does
+    cityGridMat.emissiveIntensity = 0.04 + (v.winLit ?? 0.1) * 1.15;
+  }
   if (skylineMat && v.winLit !== undefined) {
     curWinLit = v.winLit;
     // silhouettes a shade darker than the fog they stand in, windows brighter
@@ -1560,6 +1564,31 @@ function chunkRng(cx, cz) {             // hash seed: a rebuilt chunk looks iden
   let s = ((cx * 73856093) ^ (cz * 19349663)) >>> 0;
   return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
 }
+/* The grid's own material: vertex-coloured mass PLUS an emissive window grid.
+   geo.js copies the unit box's 0..1 UVs onto every merged box, so each
+   building face gets one tile of the window pattern — the same trick the
+   skyline ring uses. emissiveIntensity rides the district's windowLit through
+   setLights, so the mid-ground city lights up as the night districts arrive
+   instead of sitting there as dark mass while the skyline glows. */
+let cityGridMat = null;
+function cityGridMaterial() {
+  if (cityGridMat) return cityGridMat;
+  const c = document.createElement('canvas'); c.width = 32; c.height = 48;
+  const g = c.getContext('2d');
+  g.fillStyle = '#000'; g.fillRect(0, 0, 32, 48);
+  g.fillStyle = '#fff';
+  for (let y = 3; y < 45; y += 6) for (let x = 3; x < 29; x += 7)
+    if (Math.random() < 0.5) g.fillRect(x, y, 4, 3);
+  const t = markShared(new THREE.CanvasTexture(c));
+  cityGridMat = new THREE.MeshStandardMaterial({
+    vertexColors: true, roughness: 0.9, metalness: 0.02,
+    // built lazily on the first chunk, so seed it from whatever district is
+    // already lit rather than waiting for the next transition
+    emissive: 0xffd9a0, emissiveMap: t, emissiveIntensity: 0.04 + curWinLit * 1.15,
+  });
+  cityGridMat.__shared = true;         // one material for every chunk, never pruned
+  return cityGridMat;
+}
 /* Corridor rect with a WIDE margin: the street's own frontline buildings
    already stand out to WALL_X + 10 (~17), so grid blocks must begin past them
    or they would grow through the shopfronts. */
@@ -1589,13 +1618,18 @@ function buildCityChunk(cx, cz, segs, dname) {
       B.box(2.2, 1.4 + rnd() * 2, 2.2, bx + (rnd() - 0.5) * dp * 0.4, h + 1.5, bz + (rnd() - 0.5) * w * 0.4, 0x4a4e56);
   }
   if (!B.count()) return null;
-  const m = new THREE.Mesh(B.build(), detailMaterial());
+  const m = new THREE.Mesh(B.build(), cityGridMaterial());
   m.userData.ownGeo = true;
   return m;
 }
-/* one chunk per call: 25 merged builds on the first frame would hitch */
+/* Normally one chunk per call — 25 merged builds in a single frame hitches.
+   But a nearly-empty grid means the run just started (or teleported), and
+   drip-feeding it there leaves the player staring at void for the first
+   second, which is exactly when they are looking around. So fill fast while
+   the grid is cold, then settle to one per frame. */
 export function updateCityGrid(segs, px, pz, dname) {
   if (!segs || !segs.length) return;
+  const budget = cityChunks.size < 18 ? 8 : 1;
   const pcx = Math.floor((px - gridOffX) / CITY_CHUNK);
   const pcz = Math.floor((pz - gridOffZ) / CITY_CHUNK);
   for (const [k, m] of cityChunks) {
@@ -1605,6 +1639,7 @@ export function updateCityGrid(segs, px, pz, dname) {
       cityChunks.delete(k);
     }
   }
+  let built = 0;
   for (let a = pcx - CITY_R; a <= pcx + CITY_R; a++) {
     for (let b = pcz - CITY_R; b <= pcz + CITY_R; b++) {
       const k = a + ',' + b;
@@ -1612,7 +1647,7 @@ export function updateCityGrid(segs, px, pz, dname) {
       const m = buildCityChunk(a, b, segs, dname);
       cityChunks.set(k, m);
       if (m) scene.add(m);
-      return;
+      if (++built >= budget) return;
     }
   }
 }

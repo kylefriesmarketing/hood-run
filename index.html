@@ -276,6 +276,9 @@
   #ov-daily{ display:none; font-size:13px; color:var(--teal); font-weight:800; margin-top:var(--sp2); }
   #ov-daily b{ color:var(--gold); }
   #ov-cause{ font-size:13.5px; color:#ffa7a7; font-weight:700; margin:var(--sp2) 0 var(--sp4); }
+  /* build stamp: so "am I actually running the new version?" is answerable
+     at a glance — the service worker can serve a stale shell for one load */
+  #build-stamp{ opacity:.5; font-size:11px; font-weight:700; letter-spacing:.5px; }
   /* broadcast lower-third — shown when the chase made the evening news */
   #ov-news{ display:none; margin:var(--sp2) auto 0; max-width:330px; background:#16181e;
     border:1px solid #2a2e38; border-radius:8px; padding:6px 10px;
@@ -426,7 +429,7 @@
   <div class="sheet">
     <div class="sheet-body">
       <div class="title">HOOD<br>RUN</div>
-      <div class="subtitle">the whole city is your getaway</div>
+      <div class="subtitle">the whole city is your getaway <b id="build-stamp"></b></div>
       <div class="tagline">The City Trust job went <i>loud</i>. Bag over your shoulder,
         alarm ringing, patrol on your heels — good thing nobody knows these blocks like you.</div>
       <div class="stat-row">

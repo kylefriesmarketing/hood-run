@@ -4,7 +4,7 @@
    Block Party effects, and the __hr test harness. */
 
 import * as THREE from '../lib/three.module.js';
-import { LANE_W, HALF, HAZARDS, DISTRICTS, TUNE } from './data.js';
+import { LANE_W, HALF, HAZARDS, DISTRICTS, TUNE, BUILD } from './data.js';
 import { loadSave, commitSave, resetSave } from './save.js';
 import * as W from './world.js';
 import * as GAME from './game.js';
@@ -708,6 +708,17 @@ function frame(now) {
 requestAnimationFrame(frame);
 GAME.toHome();
 document.getElementById('loading').classList.add('hide');
+/* Stamp the running build on the home screen. The service worker can serve a
+   stale shell for one load after a deploy, so "is this the new version?" needs
+   an answer you can see rather than guess at. */
+{
+  const el = document.getElementById('build-stamp');
+  if (el) {
+    el.textContent = BUILD;
+    // ask the SW what it actually cached — mismatch means a refresh is pending
+    navigator.serviceWorker?.getRegistration?.().then(r => r && r.update()).catch(() => {});
+  }
+}
 
 /* ---------------- test harness ---------------- */
 window.__hr = {

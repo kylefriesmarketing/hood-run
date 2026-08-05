@@ -216,6 +216,20 @@ animateSegments, hidden→run→hidden, 14–30s cadence, random direction),
 with sfx.train (3.4s lowpass rumble + two-tone horn), distance-attenuated
 via the runner position already flowing into animateSegments.
 
+GRID WINDOWS + BUILD STAMP (v27): the grid gets its own material —
+vertex-coloured mass plus an emissive window map (geo.js copies the unit
+box's 0..1 UVs onto every merged box, so each face gets one tile of the
+pattern, the skyline ring's trick). emissiveIntensity rides windowLit
+through setLights (measured 0.23 day block -> 1.30 nightmarket), and the
+material seeds itself from curWinLit because it is built lazily on the
+first chunk. Grid also fills 8 chunks/frame while cold (<18) so a fresh
+run is never staring at void, then settles to 1/frame.
+⚠️ `BUILD` in data.js is stamped on the home screen next to the subtitle —
+BUMP IT WITH sw.js's CACHE. The service worker serves a stale shell for
+one load after a deploy, so without a visible stamp "it's still broken"
+and "you're on the old build" are indistinguishable. Kyle reported the
+same void three times; the third was almost certainly cache.
+
 ⚠️ WORLD CITY GRID (v26) — REPLACES the v24 strip fill, which only ever
 built strips beside the CURRENT street: the diagonal quadrants at corners,
 the ground behind the bank and everything past the strips stayed void
