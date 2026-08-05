@@ -1018,18 +1018,22 @@ const NEIGHBOR_FITS = [
   { skin: 0xc79a6b, top: 0xc94f7c, pants: 0x5a4a3a, shoes: 0xf0f0f0 },
   { skin: 0xa06a44, top: 0xf0e6d8, pants: 0x2a2e36, shoes: 0xd23c3c },
 ];
-function mkNeighbor() { // sidewalk person; animation is driven by the view
+function mkNeighbor(forceWalk) { // sidewalk person; animation is driven by the view
   if (rigReady()) {
     const r = createRigged(pick(NEIGHBOR_FITS));
     const g = r.group;
-    const working = Math.random() < 0.35;      // kneeling, busy with something
-    play(r, working ? 'Working' : 'Idle');
+    const roll = forceWalk ? 0.5 : Math.random();
+    const working = roll < 0.28;               // kneeling, busy with something
+    const walking = !working && roll < 0.72;   // most of the street is in motion
+    play(r, working ? 'Working' : walking ? 'Walk' : 'Idle');
     r._cur.time = rand(0, 2);                  // desync the loop phases
     r.mixer.update(0);
     g.userData.rig = r;
+    // +1 walks toward the oncoming player, -1 walks away with him
+    g.userData.walk = walking ? (Math.random() < 0.55 ? 1 : -1) : 0;
     // the raised arm reads as POINTING at the fleeing robber ("there he goes!")
     // — a happier fit for the fiction than the wave it started as
-    g.userData.wave = !working && Math.random() < 0.5;
+    g.userData.wave = !working && !walking && Math.random() < 0.5;
     g.add(blobShadow(0.7));
     return g;
   }
@@ -1826,6 +1830,15 @@ export function buildSegment(seg, opts) {
   else if (seg.alley) buildAlleyDressing(g, seg, d, opts);
   else buildStreetDressing(g, seg, d, opts, dd);
 
+  /* Tree crowns and hanging laundry have carried a `sway` amplitude since they
+     were written, and nothing ever read it. Collect them once here — base x is
+     captured now so the wind can offset from it — and the view breathes. */
+  {
+    const sw = [];
+    g.traverse(o => { if (o.userData && o.userData.sway) sw.push({ o, amp: o.userData.sway, bx: o.position.x, ph: Math.random() * 7 }); });
+    if (sw.length) g.userData.swayers = sw;
+  }
+
   // junction dressing at exit
   const accent = d.accent || '#ffd23c';
   if (seg.exit !== 'S') {
@@ -2202,10 +2215,15 @@ function buildStreetDressing(g, seg, d, opts, dd) {
       else if (roll < 0.72) { const be = mkBench(); be.position.set(side * (HALF + 1.7), 0.24, -d2); be.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2; g.add(be); }
       else if (roll < 0.86) {   // widened once the people became worth looking at
         const n = mkNeighbor(); n.position.set(side * (HALF + rand(1.2, 2.2)), 0.24, -d2);
-        n.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2;
+        // standers face the street; walkers face the way they are going
+        // (characters are modelled looking down +z, so +1 needs no yaw)
+        n.rotation.y = n.userData.walk
+          ? (n.userData.walk > 0 ? 0 : Math.PI)
+          : (side > 0 ? -Math.PI / 2 : Math.PI / 2);
         if (n.userData.rig) {
           (g.userData.rigs = g.userData.rigs || []).push(n.userData.rig);
           if (n.userData.wave) (g.userData.wavers = g.userData.wavers || []).push(n.userData.rig);
+          if (n.userData.walk) (g.userData.walkers = g.userData.walkers || []).push(n);
         } else { g.userData.neighbors = g.userData.neighbors || []; g.userData.neighbors.push(n); }
         g.add(n);
       }
@@ -2216,6 +2234,26 @@ function buildStreetDressing(g, seg, d, opts, dd) {
         g.add(c);
       }
     }
+    /* A dedicated flow of people on foot. Pedestrians used to compete with
+       hydrants and benches in one prop roll, which left ~2 walkers in the
+       whole visible city; a street should have foot traffic whether or not it
+       also happens to have a mailbox. */
+    /* Density is affordable — MEASURE, don't guess. Naive cross-session timings
+       said this crowd cost 24ms/frame; a controlled A/B in one session (detach
+       every character, re-time the same seed at the same distance) put the real
+       figure at 2.4ms for 34 people. The throttled test pane makes any
+       comparison across runs meaningless. */
+    for (let d2 = rand(6, 16); d2 < propEnd; d2 += rand(16, 30) / Math.max(0.5, dd)) {
+      const n = mkNeighbor(true);
+      n.position.set(side * (HALF + rand(1.1, 2.3)), 0.24, -d2);
+      n.rotation.y = n.userData.walk > 0 ? 0 : Math.PI;
+      if (n.userData.rig) {
+        (g.userData.rigs = g.userData.rigs || []).push(n.userData.rig);
+        if (n.userData.walk) (g.userData.walkers = g.userData.walkers || []).push(n);
+      } else { g.userData.neighbors = g.userData.neighbors || []; g.userData.neighbors.push(n); }
+      g.add(n);
+    }
+
     // a flock pecking on the sidewalk — scatters when Jay closes in
     if (side < 0 && Math.random() < 0.55 * dd) {
       const flock = [];
@@ -2431,18 +2469,52 @@ export function animateSegments(segs, time, party, runnerPos) {
   if ((++_sweepTick % 120) === 0) for (const s of segs) sweepBackdrops(s);
   for (const seg of segs) {
     const g = seg.group; if (!g) continue;
+    /* Runner in THIS segment's local frame, computed once at the top because
+       several systems below need it. It used to be derived further down, after
+       the crowd LOD had already read it — so the LOD compared every character
+       against the PREVIOUS segment's coordinates and hid everyone nearby. */
+    const wantsLocal = runnerPos && (g.userData.pigeons || g.userData.grates || g.userData.rigs);
+    if (wantsLocal) { _pl.copy(runnerPos); g.worldToLocal(_pl); }
     if (g.userData.neighbors) for (const n of g.userData.neighbors) {
       n.userData.anim.rotation.z = Math.sin(time * 5 + n.position.z) * 0.5 - 0.4;
     }
     // skinned bystanders: clips first, then the pointing arm layered over the
     // clip — same post-mixer trick the runner uses for slides
-    if (g.userData.rigs) for (const r of g.userData.rigs) r.mixer.update(dt);
+    /* Crowd LOD. A skinned character with its own mixer is the most expensive
+       thing in the city — 63 of them cost 33ms/frame, versus 9 without. So the
+       street stays busy but only the people you can actually see are animated,
+       and the ones well behind or far ahead are not drawn at all. */
+    if (g.userData.rigs) {
+      if (!runnerPos) { for (const r of g.userData.rigs) r.mixer.update(dt); }
+      else for (const r of g.userData.rigs) {
+        const p = r.group.position;
+        const dx = _pl.x - p.x, dz = _pl.z - p.z;
+        const d2 = dx * dx + dz * dz;
+        const vis = d2 < 3000;                     // ~55 units: drawn
+        r.group.visible = vis;
+        if (vis && d2 < 1300) r.mixer.update(dt);  // ~36 units: animated
+      }
+    }
+    /* people actually going somewhere — they walk the sidewalk in segment-local
+       z and wrap at the ends, so a block always has traffic on foot */
+    if (g.userData.walkers) for (const w of g.userData.walkers) {
+      w.position.z += w.userData.walk * 1.35 * dt;
+      if (w.position.z > 1) w.position.z = -seg.len;
+      else if (w.position.z < -seg.len - 1) w.position.z = 0;
+    }
+    /* wind: gusting sway on tree crowns and hung laundry */
+    if (g.userData.swayers) {
+      const gust = 1 + Math.sin(time * 0.37) * 0.55;
+      for (const s of g.userData.swayers) {
+        const wv = Math.sin(time * 1.35 + s.ph) * gust;
+        s.o.rotation.z = wv * s.amp;
+        s.o.position.x = s.bx + wv * s.amp * 1.6;
+      }
+    }
     if (g.userData.wavers) for (const r of g.userData.wavers) {
       const b = r.bones.RightArm;
       if (b) b.rotation.z -= 1.7 + Math.sin(time * 6) * 0.4;
     }
-    const wantsLocal = runnerPos && (g.userData.pigeons || g.userData.grates);
-    if (wantsLocal) { _pl.copy(runnerPos); g.worldToLocal(_pl); }
     if (g.userData.pigeons && runnerPos) {
       for (const p of g.userData.pigeons) {
         const u = p.userData;

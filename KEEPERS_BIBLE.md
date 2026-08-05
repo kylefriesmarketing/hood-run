@@ -216,6 +216,28 @@ animateSegments, hidden→run→hidden, 14–30s cadence, random direction),
 with sfx.train (3.4s lowpass rumble + two-tone horn), distance-attenuated
 via the runner position already flowing into animateSegments.
 
+WALKING CROWD + WIND (v29): pedestrians now WALK the sidewalk — mkNeighbor
+takes forceWalk, plays the Walk clip, and a dedicated crowd loop in
+buildStreetDressing places them every ~16-30 units per side (they used to
+compete with hydrants and benches in ONE prop roll, which left 2 walkers in
+the entire visible city). They move in segment-local z and wrap at the
+segment ends. Crowd LOD: drawn within ~55 units, animated within ~36.
+Also wired the long-dead `userData.sway` tag — tree crowns and hung laundry
+had carried an amplitude since they were written and nothing ever read it;
+now they gust on a shared wind phase.
+⚠️⚠️ TWO LESSONS, both cost real time:
+1. **Order matters in animateSegments.** The LOD read `_pl` (runner in
+   segment-local space) BEFORE the line that computes it, so every distance
+   used the PREVIOUS segment's coordinates — nearest "visible" pedestrian was
+   118 units away and everyone nearby was culled. `_pl` is now derived at the
+   top of the per-segment loop. If a per-segment system behaves as though it
+   is looking at the wrong street, check it runs after that line.
+2. **Perf must be measured by controlled A/B, never across runs.** Naive
+   cross-session timings said the crowd cost 24ms/frame and nearly got it
+   deleted; detaching every character and re-timing the same seed at the same
+   distance in ONE session put it at 2.4ms (41 people = 4.5ms). The throttled
+   test pane makes any cross-run comparison meaningless.
+
 NIGHT LIFE (v28): streetlamps throw a real POOL on the road plus a halo
 sprite on the head (both additive, both ONE shared material each so the
 night lerp raises every lamp in the city with a single opacity write);
