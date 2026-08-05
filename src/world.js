@@ -1542,61 +1542,107 @@ function sweepBackdrops(newSeg) {
   }
 }
 
-/* ---------------- mid-ground city fill ----------------
-   The corridor strip used to be the whole world: step out of the bank or look
-   over an alley wall and there was nothing until the skyline ring at r95.
-   Three columns of building mass per side fill the middle distance now,
-   heights rising toward the skyline. Every block checks the PATH first, so
-   streets carve themselves through the mass; each (side, column) chunk is one
-   merged registered mesh, so a corridor born after the chunk (bornMax rule)
-   removes the chunk it claims. */
-const FILL_COLS = [
-  { x: 18, h0: 10, h1: 20 },
-  { x: 34, h0: 12, h1: 26 },
-  { x: 52, h0: 16, h1: 34 },
-];
-function buildCityFill(g, seg, d, opts, isRoof) {
-  const L = seg.len;
-  const yOff = isRoof ? -ROOF_H : 0;   // roof groups sit at ROOF_H; fill stands on the ground
+/* ---------------- the world city grid ----------------
+   Per-segment fill only ever built strips beside the CURRENT street, so the
+   diagonal quadrants at corners, the ground behind the bank and everything
+   past the strips stayed void — visible on the first frame, over barriers and
+   at every junction. This replaces it with a world-space lattice: blocks laid
+   on a 46-unit grid all around the camera, each block skipped where a corridor
+   runs, so the streets punch their own holes through a solid city.
+
+   Chunks are keyed in GRID space; gridOff tracks the accumulated origin
+   rebases so a key always maps back to the right world spot. */
+const CITY_CHUNK = 46, CITY_R = 2;      // ±92 out — meets the skyline ring at 95
+const cityChunks = new Map();           // "cx,cz" -> Mesh | null (null = empty, don't retry)
+let gridOffX = 0, gridOffZ = 0;
+
+function chunkRng(cx, cz) {             // hash seed: a rebuilt chunk looks identical
+  let s = ((cx * 73856093) ^ (cz * 19349663)) >>> 0;
+  return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+}
+/* Corridor rect with a WIDE margin: the street's own frontline buildings
+   already stand out to WALL_X + 10 (~17), so grid blocks must begin past them
+   or they would grow through the shopfronts. */
+function gridClear(rect, segs) {
+  for (const s of segs) if (rectsOverlap(rect, segRect(s, 19, 24))) return false;
+  return true;
+}
+function buildCityChunk(cx, cz, segs, dname) {
+  const rnd = chunkRng(cx, cz);
+  const d = DISTRICTS[dname] || DISTRICTS.block;
   const base = new THREE.Color(d.brickset[0]);
-  const dd = opts.decorDensity ?? 1;
-  const turnSide = seg.exit === 'R' ? 1 : seg.exit === 'L' ? -1 : 0;
-  for (const side of [-1, 1]) {
-    // the turn side hosts the next street just past the junction — stop early
-    const endD = (side === turnSide) ? L - 20 : L - 2;
-    for (const col of FILL_COLS) {
-      const B2 = makeBuilder();
-      let dpos = rand(0, 4);
-      while (dpos + 10 < endD) {
-        const w = rand(10, 18), gap = rand(2, 6) / Math.max(0.5, dd);
-        if (dpos + w > endD) break;
-        const cx = side * (col.x + rand(-2, 2));
-        const h = rand(col.h0, col.h1), dp = rand(9, 13);
-        if (corridorClear(localRectToWorld(seg, cx - dp / 2, cx + dp / 2, -(dpos + w), -dpos), opts.segs, seg.index)) {
-          const c = base.clone().multiplyScalar(0.42 + Math.random() * 0.3);
-          c.offsetHSL(rand(-0.02, 0.02), rand(-0.05, 0.05), 0);
-          const colr = c.getHex();
-          B2.box(dp, h, w, cx, yOff + h / 2, -(dpos + w / 2), colr);                       // mass
-          B2.box(dp * 0.92, 0.9, w * 0.92, cx, yOff + h + 0.4, -(dpos + w / 2), c.multiplyScalar(0.78).getHex());  // parapet
-          if (Math.random() < 0.4)                                                          // roof unit
-            B2.box(2, rand(1.2, 2.4), 2, cx + rand(-2, 2), yOff + h + 1.4, -(dpos + w / 2) + rand(-3, 3), 0x4a4e56);
-        }
-        dpos += w + gap;
-      }
-      if (B2.count()) {
-        const m = new THREE.Mesh(B2.build(), detailMaterial());
-        m.userData.ownGeo = true;
-        g.add(m);
-        registerBackdrop(m, seg.index);
-      }
+  const B = makeBuilder();
+  const ox = cx * CITY_CHUNK + gridOffX, oz = cz * CITY_CHUNK + gridOffZ;
+  const LOT = CITY_CHUNK / 3;
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+    if (rnd() < 0.14) continue;                       // yards and parking lots
+    const w = LOT * (0.62 + rnd() * 0.3), dp = LOT * (0.62 + rnd() * 0.3);
+    const bx = ox + (i + 0.5) * LOT + (rnd() - 0.5) * 3;
+    const bz = oz + (j + 0.5) * LOT + (rnd() - 0.5) * 3;
+    if (!gridClear({ x0: bx - dp / 2, x1: bx + dp / 2, z0: bz - w / 2, z1: bz + w / 2 }, segs)) continue;
+    const h = 9 + rnd() * 26;
+    const c = base.clone().multiplyScalar(0.4 + rnd() * 0.34);
+    c.offsetHSL((rnd() - 0.5) * 0.04, (rnd() - 0.5) * 0.1, 0);
+    B.box(dp, h, w, bx, h / 2, bz, c.getHex());
+    B.box(dp * 0.94, 0.8, w * 0.94, bx, h + 0.4, bz, c.clone().multiplyScalar(0.74).getHex());
+    if (rnd() < 0.35)                                  // roof unit breaks the skyline
+      B.box(2.2, 1.4 + rnd() * 2, 2.2, bx + (rnd() - 0.5) * dp * 0.4, h + 1.5, bz + (rnd() - 0.5) * w * 0.4, 0x4a4e56);
+  }
+  if (!B.count()) return null;
+  const m = new THREE.Mesh(B.build(), detailMaterial());
+  m.userData.ownGeo = true;
+  return m;
+}
+/* one chunk per call: 25 merged builds on the first frame would hitch */
+export function updateCityGrid(segs, px, pz, dname) {
+  if (!segs || !segs.length) return;
+  const pcx = Math.floor((px - gridOffX) / CITY_CHUNK);
+  const pcz = Math.floor((pz - gridOffZ) / CITY_CHUNK);
+  for (const [k, m] of cityChunks) {
+    const c = k.split(','), a = +c[0], b = +c[1];
+    if (Math.abs(a - pcx) > CITY_R + 1 || Math.abs(b - pcz) > CITY_R + 1) {
+      if (m) { scene.remove(m); disposeGroup(m); }
+      cityChunks.delete(k);
     }
   }
+  for (let a = pcx - CITY_R; a <= pcx + CITY_R; a++) {
+    for (let b = pcz - CITY_R; b <= pcz + CITY_R; b++) {
+      const k = a + ',' + b;
+      if (cityChunks.has(k)) continue;
+      const m = buildCityChunk(a, b, segs, dname);
+      cityChunks.set(k, m);
+      if (m) scene.add(m);
+      return;
+    }
+  }
+}
+/* a new leg of the path drops the chunks it crosses; they rebuild with the
+   street carved out (same reasoning as the backdrop sweep) */
+function invalidateCityChunks(seg) {
+  if (!cityChunks.size) return;
+  const r = segRect(seg, 19, 24);
+  for (const [k, m] of cityChunks) {
+    const c = k.split(','), x0 = +c[0] * CITY_CHUNK + gridOffX, z0 = +c[1] * CITY_CHUNK + gridOffZ;
+    if (rectsOverlap({ x0, x1: x0 + CITY_CHUNK, z0, z1: z0 + CITY_CHUNK }, r)) {
+      if (m) { scene.remove(m); disposeGroup(m); }
+      cityChunks.delete(k);
+    }
+  }
+}
+export function rebaseCityGrid(dx, dz) {
+  gridOffX += dx; gridOffZ += dz;               // keys keep mapping to the right ground
+  for (const m of cityChunks.values()) if (m) { m.position.x += dx; m.position.z += dz; }
+}
+function resetCityGrid() {
+  for (const m of cityChunks.values()) if (m) { scene.remove(m); disposeGroup(m); }
+  cityChunks.clear(); gridOffX = 0; gridOffZ = 0;
 }
 
 /* ---------------- segment construction ---------------- */
 export function buildSegment(seg, opts) {
   // fresh run: the old world is torn down, so the registry starts clean too
-  if (seg.index === 0) backdropReg.length = 0;
+  if (seg.index === 0) { backdropReg.length = 0; resetCityGrid(); }
+  invalidateCityChunks(seg);        // this street carves its hole in the grid
   // decor registered during this build knows every segment alive right now
   regBornMax = opts.segs ? opts.segs.reduce((m, s) => Math.max(m, s.index), seg.index) : seg.index;
   // a new leg of the path claims its right of way (rule 2 above)
@@ -1671,8 +1717,6 @@ export function buildSegment(seg, opts) {
       g.userData.policeLights = lights;
     }
   }
-
-  buildCityFill(g, seg, d, opts, isRoof);
 
   if (isRoof) buildRooftopDressing(g, seg, d, opts);
   else if (seg.alley) buildAlleyDressing(g, seg, d, opts);

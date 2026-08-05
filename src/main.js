@@ -91,6 +91,7 @@ function meshSwapCb(kind, data) {
     }
     W.camera.position.x += dx; W.camera.position.z += dz;
     if (dogCameo) { dogCameo.position.x += dx; dogCameo.position.z += dz; }
+    W.rebaseCityGrid(dx, dz);      // grid lives in world space; carry it along
   }
 }
 function pruneCb(seg) {
@@ -590,6 +591,9 @@ function updateView(dt) {
 
   /* the rain that explains downtown's wet roads */
   updateRain(dt, st);
+
+  /* the city all around the lanes — one chunk built per frame */
+  W.updateCityGrid(G.segs, pPos.x, pPos.z, GAME.currentDistrict());
 
   /* camera — normal chase framing. During the opening it starts tighter and
      lower (over-the-shoulder, inside the lobby) and dollies out to the chase

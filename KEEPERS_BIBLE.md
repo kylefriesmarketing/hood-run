@@ -216,7 +216,24 @@ animateSegments, hidden→run→hidden, 14–30s cadence, random direction),
 with sfx.train (3.4s lowpass rumble + two-tone horn), distance-attenuated
 via the runner position already flowing into animateSegments.
 
-CITY FILL (v24) — "the city should feel full": three columns of building
+⚠️ WORLD CITY GRID (v26) — REPLACES the v24 strip fill, which only ever
+built strips beside the CURRENT street: the diagonal quadrants at corners,
+the ground behind the bank and everything past the strips stayed void
+(Kyle: "at the start, over barriers, at corners you can see empty void").
+Now a world-space lattice: CITY_CHUNK 46, CITY_R 2 (±92, meets the
+skyline at 95), 3x3 lots per chunk, hash-seeded per (cx,cz) so a rebuilt
+chunk looks identical. `gridClear` rejects any block overlapping a
+corridor with segRect(19, 24) — 19 because the street's own frontline
+buildings stand out to WALL_X+10 ≈ 17 and a smaller margin grows grid
+mass through the shopfronts. ONE chunk built per frame (25 merged builds
+in one frame hitches). Chunks are invalidated by each new segment
+(street carves its hole), shifted by rebaseCityGrid on origin rebase
+(keys stay valid because gridOff accumulates the shift), reset at
+seg.index 0. Net effect was FASTER than the strip fill it replaced:
+geometries 523 -> 176, frame 12.4 -> 10.6ms, because per-segment fill
+built 6 merged meshes per segment and overlapped the frontline anyway.
+
+CITY FILL (v24, superseded) — "the city should feel full": three columns of building
 mass per side (FILL_COLS x 18/34/52, heights rising toward the skyline)
 fill the mid-ground between the frontline strip and the r95 skyline ring,
 in street, alley AND roof variant groups (roof fill y-compensates ROOF_H).
