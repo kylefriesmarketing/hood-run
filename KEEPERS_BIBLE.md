@@ -216,6 +216,27 @@ animateSegments, hidden→run→hidden, 14–30s cadence, random direction),
 with sfx.train (3.4s lowpass rumble + two-tone horn), distance-attenuated
 via the runner position already flowing into animateSegments.
 
+⚠️⚠️ REACTION BUDGET (v33) — the first GAMEPLAY-FAIRNESS measurement ever run
+on this project, and it found a real defect. populateSegment opened every
+block with a flat `startD = seg.start + 9`. A block begins AT A JUNCTION,
+which is a blind 90° corner, so 9m is all the warning a hazard there gets:
+0.8s at the opening pace but **0.30s at top speed** — under human reaction
+time (~250ms) before the jump/slide has begun to commit. Measured over 345
+block entries: 29.3% under 0.4s, 51% under 0.6s, 5th percentile sitting ON
+the 0.30s floor. Fix: `leadIn = max(9, G.speed * 0.75)` — identical at the
+opening pace, ~22m at full tilt. After: min 0.63s, p05 0.64, median 0.75,
+**0% under 0.6s**, hazard count unchanged (335 vs 345 blocks).
+⚠️ It roughly TRIPLED bot survival (median ~510m -> 1461m) and that is
+expected, not a regression: the bot reacts in ONE FRAME, so those hazards
+were killing a machine with perfect reflexes — they were a coin flip, not
+difficulty. The bot's distance is an UPPER BOUND and no guide to human
+pacing. If Kyle wants more pressure back, raise density/phases in data.js
+rather than shrinking this budget below reaction+commit (~0.5s).
+HARNESS RECIPE (reusable): step the sim, watch for `G.segIdx` changing, find
+the lowest-`d` non-`safe` active obstacle on the new segment, and record
+`(obs.d - seg.start) / G.speed`. Split by whether the previous segment
+exited L/R to isolate blind corners.
+
 IMAGE QUALITY PASS (v32) — driven by MEASURING the frame, not eyeballing it.
 Sampling the rendered canvas into a luma histogram showed 64% of pixels in
 the bottom two buckets (mean 55/255): crushed, not moody. Two fixes:
