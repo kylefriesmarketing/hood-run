@@ -241,6 +241,9 @@ function setLights(v) {
     const night = nightOf(v.winLit);
     if (lampPoolMat) lampPoolMat.opacity = night * 0.5;
     if (lampHazeMat) lampHazeMat.opacity = night * 0.75;
+    if (carHeadMat) carHeadMat.opacity = night;          // parked cars left on
+    if (carTailMat) carTailMat.opacity = night * 0.9;
+    if (carGlowMat) carGlowMat.opacity = night * 0.55;
   }
   if (skylineMat && v.winLit !== undefined) {
     curWinLit = v.winLit;
@@ -706,6 +709,7 @@ function mkTree() {
    per kind, so the night lerp can raise every lamp pool in the city with a
    single opacity write instead of walking the scene graph. */
 let lampPoolMat = null, lampHazeMat = null;
+let carHeadMat = null, carTailMat = null, carGlowMat = null;
 /* both are built lazily on the first streetlight, which happens AFTER the
    opening district is lit — so seed them from the level already in effect */
 const nightOf = wl => Math.max(0, Math.min(1, ((wl ?? 0.1) - 0.1) / 0.5));
@@ -909,6 +913,27 @@ function mkParkedCar() {
   for (const [x, z] of [[-0.85, 1.35], [0.85, 1.35], [-0.85, -1.35], [0.85, -1.35]]) {
     const w = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.2, 10), wm);
     w.rotation.z = Math.PI / 2; w.position.set(x, 0.3, z); g.add(w);
+  }
+  /* Lamps that only exist after dark, on shared materials so the night lerp
+     lights every car in the city with two writes. Headlights point down the
+     street (+z, the modelling convention), tail lamps back up it. */
+  if (!carHeadMat) {
+    const n0 = nightOf(curWinLit);        // built lazily; seed from the live district
+    carHeadMat = new THREE.MeshBasicMaterial({ color: 0xfff0c8, transparent: true, opacity: n0 });
+    carHeadMat.__shared = true;
+    carTailMat = new THREE.MeshBasicMaterial({ color: 0xff3a2a, transparent: true, opacity: n0 * 0.9 });
+    carTailMat.__shared = true;
+    carGlowMat = new THREE.SpriteMaterial({
+      map: radialTex('rgba(255,244,214,.9)', 'rgba(255,230,160,.25)'), color: 0xfff0c8,
+      transparent: true, opacity: n0 * 0.55, blending: THREE.AdditiveBlending, depthWrite: false });
+    carGlowMat.__shared = true;
+  }
+  for (const s of [-1, 1]) {
+    g.add(box(0.34, 0.16, 0.06, 0, s * 0.6, 0.56, 2.12, carHeadMat));
+    g.add(box(0.3, 0.14, 0.06, 0, s * 0.62, 0.58, -2.12, carTailMat));
+    const gl = new THREE.Sprite(carGlowMat);
+    gl.scale.setScalar(1.15); gl.position.set(s * 0.6, 0.56, 2.3);
+    g.add(gl);
   }
   return g;
 }
@@ -2017,8 +2042,9 @@ function addBuildingDetail(B, side, dpos, w, h, depth, d, layout) {
    the facade canvas is 256x384 with flipY, so canvas y_c sits at world
    y = h*(1 - y_c/384); canvas u runs along the frontage in the direction of
    the face's local +x after the ±π/2 yaw, which is what zOf() encodes. */
-function addFacadeRelief(B, layout, side, dpos, w, h) {
+function addFacadeRelief(B, layout, side, dpos, w, h, host, tvs) {
   if (!layout) return;
+  let tvPlaced = false;
   const TH = 384, TW = 256;
   const yOf = yc => h * (1 - yc / TH);
   const zOf = u => side > 0 ? -(dpos + w * (1 - u)) : -(dpos + u * w);
@@ -2056,6 +2082,22 @@ function addFacadeRelief(B, layout, side, dpos, w, h) {
     }
     if (wn.plant)                                                 // planter box
       B.box(0.3, 0.16, zw(24), xAt(0.24, 0.3), yOf(wn.y + 38), zC, 0x3f7a3a);
+
+    /* A television flickering behind one lit window — the cue that says
+       somebody is home, rather than that a light was left on. Its own mesh
+       (the merged builder cannot animate) but only ONE per building. */
+    if (tvs && host && !tvPlaced && wn.lit && Math.random() < 0.4) {
+      tvPlaced = true;
+      const tv = new THREE.Mesh(markShared(new THREE.PlaneGeometry(1, 1)),
+        new THREE.MeshBasicMaterial({ color: 0x9fd8ff, transparent: true,
+          opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+      tv.scale.set(zw(26), h * (36 / 384), 1);
+      tv.position.set(xAt(0.06, 0), yOf(wn.y + 20), zC);
+      tv.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2;   // face the road
+      tv.renderOrder = 4;
+      host.add(tv);
+      tvs.push({ m: tv.material, ph: Math.random() * 9 });
+    }
   }
 
   if (layout.store) {
@@ -2162,7 +2204,8 @@ function buildStreetDressing(g, seg, d, opts, dd) {
            range once the merged mesh exists (each box is 24 verts). */
         const detailStart = B.count();
         addBuildingDetail(B, side, dpos, w, h, depth, d, faceTex.userData.layout);
-        addFacadeRelief(B, faceTex.userData.layout, side, dpos, w, h);
+        addFacadeRelief(B, faceTex.userData.layout, side, dpos, w, h,
+          g, (g.userData.tvs = g.userData.tvs || []));
         pendingBld.push({ mesh: bld, b0: detailStart, b1: B.count() });
         if (Math.random() < 0.25 * dd && !d.decor?.glass) { const fe = mkFireEscape(); fe.position.set(side * (WALL_X - 0.5), 0, -(dpos + w / 2)); fe.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2; g.add(fe); }
         if (d.decor?.stoops && Math.random() < 0.35 * dd) { const st = mkStoop(); st.position.set(side * (WALL_X - 0.9), 0.24, -(dpos + w / 2)); st.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2; g.add(st); }
@@ -2501,6 +2544,15 @@ export function animateSegments(segs, time, party, runnerPos) {
       w.position.z += w.userData.walk * 1.35 * dt;
       if (w.position.z > 1) w.position.z = -seg.len;
       else if (w.position.z < -seg.len - 1) w.position.z = 0;
+    }
+    /* televisions: an irregular two-rate pulse, so it reads as a picture
+       changing rather than a lamp on a timer. Only after dark. */
+    if (g.userData.tvs) {
+      const nf = nightOf(curWinLit);
+      if (nf > 0.01) for (const t of g.userData.tvs) {
+        const a = Math.sin(time * 6.7 + t.ph), b = Math.sin(time * 2.9 + t.ph * 2.1);
+        t.m.opacity = nf * (0.16 + 0.5 * Math.abs(a * b));
+      } else for (const t of g.userData.tvs) t.m.opacity = 0;
     }
     /* wind: gusting sway on tree crowns and hung laundry */
     if (g.userData.swayers) {

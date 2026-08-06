@@ -216,6 +216,15 @@ animateSegments, hidden→run→hidden, 14–30s cadence, random direction),
 with sfx.train (3.4s lowpass rumble + two-tone horn), distance-attenuated
 via the runner position already flowing into animateSegments.
 
+SOMEBODY'S HOME (v30): parked cars get headlights, tail lamps and a
+headlight glow sprite (three shared materials, opacity driven by the same
+nightOf(winLit) curve as the streetlamps, seeded from curWinLit because
+they are built lazily); and a TELEVISION flickers behind one lit window
+per building. The TV reuses addFacadeRelief's canvas->world mapping so it
+lands exactly on a painted window (host + tvs are extra params; one per
+building via a tvPlaced latch), and pulses on two incommensurate sine
+rates so it reads as a picture changing rather than a lamp on a timer.
+
 WALKING CROWD + WIND (v29): pedestrians now WALK the sidewalk — mkNeighbor
 takes forceWalk, plays the Walk clip, and a dedicated crowd loop in
 buildStreetDressing places them every ~16-30 units per side (they used to
