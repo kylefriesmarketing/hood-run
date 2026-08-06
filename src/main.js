@@ -280,6 +280,16 @@ const camPos = new THREE.Vector3(), lookAt = new THREE.Vector3(), pPos = new THR
 const smooth = t => t * t * (3 - 2 * t);
 const dogCameo = W.mkDogCameo(); W.scene.add(dogCameo); dogCameo.visible = false;
 
+/* ---------------- the runner's key light ----------------
+   Jay is a small dark figure on dark asphalt, and in the night districts he
+   was very nearly invisible — a readability problem, not a taste one. This is
+   the standard third-person fix: a soft light that travels with him, from the
+   camera side so it fills rather than re-lights the scene. It strengthens as
+   the districts darken, which is exactly where he needed it. Added once at
+   boot: adding a light later would recompile every material in the city. */
+const heroLight = new THREE.PointLight(0xfff2e0, 0, 11, 2);
+W.scene.add(heroLight);
+
 /* ---------------- downtown drizzle ----------------
    The downtown roads already carry a wet sheen (DISTRICTS.wet 0.45); this is
    the rain that explains it. ~170 falling streaks kept in a box that wraps
@@ -647,6 +657,13 @@ function updateView(dt) {
     legs[0].rotation.x = Math.sin(ph) * 0.9; legs[1].rotation.x = Math.sin(ph) * 0.9;
     legs[2].rotation.x = Math.sin(ph + Math.PI) * 0.9; legs[3].rotation.x = Math.sin(ph + Math.PI) * 0.9;
   } else dogCameo.visible = false;
+
+  /* Keep Jay readable: the light rides just above and camera-side of him.
+     (Derives its own forward vector — the camera block's fx/fz are declared
+     further down this function and are not in scope yet here.) */
+  const hlx = -Math.sin(camAng), hlz = -Math.cos(camAng);
+  heroLight.position.set(pPos.x - hlx * 2.2, pPos.y + 3.4, pPos.z - hlz * 2.2);
+  heroLight.intensity = 6 + W.nightLevel() * 16;
 
   /* the press, once the chase is newsworthy */
   updateChopper(dt, st, pPos);

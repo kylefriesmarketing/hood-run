@@ -216,6 +216,28 @@ animateSegments, hidden→run→hidden, 14–30s cadence, random direction),
 with sfx.train (3.4s lowpass rumble + two-tone horn), distance-attenuated
 via the runner position already flowing into animateSegments.
 
+IMAGE QUALITY PASS (v32) — driven by MEASURING the frame, not eyeballing it.
+Sampling the rendered canvas into a luma histogram showed 64% of pixels in
+the bottom two buckets (mean 55/255): crushed, not moody. Two fixes:
+- CANYON SHADE. Every facade was lit identically from pavement to roofline,
+  the strongest tell that a street was modelled rather than photographed.
+  makeBuildingTex now multiplies a vertical gradient over the finished
+  canvas (transparent at the roof -> 0.46 blue-grey at street level). The
+  texture maps 0..1 up the building, so one gradient gives every building
+  its own falloff for free, painted windows included. Result: crushed
+  bucket 32.4% -> 24.6%, mean unchanged, zero blown highlights.
+- RUNNER KEY LIGHT (main.js `heroLight`). Jay is a small dark figure on dark
+  asphalt and in the nightmarket he measured luma 29 against a road at 50 —
+  literally DARKER than the ground he stood on. A PointLight travelling with
+  him, camera-side, intensity 6 + nightLevel()*16, takes him to 131 (contrast
+  21 -> 81, controlled A/B toggling only the light on one frame). It is a
+  readability fix, not a taste one, and it gives the night foreground depth.
+  ⚠️ Added ONCE at boot: adding a light later recompiles every material.
+  ⚠️ It derives its own forward vector — the camera block's fx/fz are
+  declared further down updateView and are not in scope at that point (the
+  same class of mistake as the isRoof trap below).
+`nightLevel()` is exported from world.js as the shared 0..1 darkness signal.
+
 CROSS TRAFFIC (v31): a car drives through the junction ahead of you. It can
 never be in the way BY CONSTRUCTION, not by luck: a crossing only STARTS
 while the junction is still 80m off (`remain = seg.len + _pl.z`) and takes

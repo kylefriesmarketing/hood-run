@@ -1,6 +1,6 @@
 /* HOOD RUN — service worker: offline-first cache of the static shell.
    Bump CACHE when any listed asset changes. */
-const CACHE = 'hood-run-v31';
+const CACHE = 'hood-run-v32';
 const ASSETS = [
   './', './index.html', './manifest.webmanifest', './icon.svg',
   './lib/three.module.js',

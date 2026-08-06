@@ -521,6 +521,21 @@ function makeBuildingTex(d) {
       g.fillStyle = '#4a3a2c'; g.fillRect(w / 2 - 18, h - 66, 36, 44);
       g.fillStyle = '#8a8a90'; g.fillRect(12, h - 14, w - 24, 8);
     }
+
+    /* CANYON SHADE. Every facade was lit identically from pavement to
+       roofline, which is the single strongest tell that a street was modelled
+       rather than photographed — in a real canyon the lower storeys sit in
+       deep shade and only the top catches sky. The texture maps 0..1 up the
+       building, so one multiply gradient here gives every building on the
+       street its own falloff, for free, including the painted windows. */
+    const shade = g.createLinearGradient(0, 0, 0, h);
+    shade.addColorStop(0, 'rgba(255,255,255,0)');      // roofline: full light
+    shade.addColorStop(0.45, 'rgba(150,155,175,0.10)');
+    shade.addColorStop(0.80, 'rgba(90,100,130,0.30)');
+    shade.addColorStop(1, 'rgba(60,70,100,0.46)');     // street level: in shade
+    g.globalCompositeOperation = 'multiply';
+    g.fillStyle = shade; g.fillRect(0, 0, w, h);
+    g.globalCompositeOperation = 'source-over';
   }, { base: 'brick', onPaint: c => bump.refresh(c) });
   t.userData.bump = bump.texture;
   t.userData.layout = layout;
@@ -713,6 +728,9 @@ let carHeadMat = null, carTailMat = null, carGlowMat = null;
 /* both are built lazily on the first streetlight, which happens AFTER the
    opening district is lit — so seed them from the level already in effect */
 const nightOf = wl => Math.max(0, Math.min(1, ((wl ?? 0.1) - 0.1) / 0.5));
+/* 0 in daylight, 1 in the darkest district — the runner's key light leans on
+   this so he stays readable exactly where the world stops lighting him */
+export function nightLevel() { return nightOf(curWinLit); }
 function radialTex(inner, mid) {
   const c = document.createElement('canvas'); c.width = c.height = 64;
   const g = c.getContext('2d');
