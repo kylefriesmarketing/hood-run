@@ -216,6 +216,22 @@ animateSegments, hidden→run→hidden, 14–30s cadence, random direction),
 with sfx.train (3.4s lowpass rumble + two-tone horn), distance-attenuated
 via the runner position already flowing into animateSegments.
 
+CROSS TRAFFIC (v31): a car drives through the junction ahead of you. It can
+never be in the way BY CONSTRUCTION, not by luck: a crossing only STARTS
+while the junction is still 80m off (`remain = seg.len + _pl.z`) and takes
+~1.3s at 26 u/s, and the car is hidden outside |x| < 11 so it emerges from
+behind one corner building and vanishes behind the other. Measured over 79
+crossings: the closest a VISIBLE car ever came to the runner was 75.9m.
+⚠️ TRAP that broke everything for a moment: the block was first written with
+`if (!isRoof && !seg.alley ...)` but pasted inside buildStreetDressing,
+which has neither variable — so EVERY street segment build threw
+"isRoof is not defined" and the world stopped generating. buildSegment and
+buildStreetDressing look similar and are not: the dispatch already picked
+the road/alley/roof path, so inside buildStreetDressing those tests are
+both wrong and unavailable. A probe with a try/catch around the tick loop
+is what surfaced it — an exception thrown inside segment building does not
+announce itself as a rendering bug.
+
 SOMEBODY'S HOME (v30): parked cars get headlights, tail lamps and a
 headlight glow sprite (three shared materials, opacity driven by the same
 nightOf(winLit) curve as the streetlamps, seeded from curWinLit because

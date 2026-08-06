@@ -2342,6 +2342,22 @@ function buildStreetDressing(g, seg, d, opts, dd) {
     g.userData.bulbs = bulbs;
   }
 
+  /* Cross traffic. A car passes through the junction ahead of you — the last
+     obviously-missing thing on a city street. It can never be in your way: a
+     crossing only STARTS while the junction is still 80m off and takes 1.3s,
+     so the car is long gone by the time you arrive. It is also hidden outside
+     |x| < 11, so it emerges from behind one corner building and vanishes
+     behind the other rather than driving through them. */
+  // (this runs inside buildStreetDressing, which is the street path only —
+  //  roofs and alleys have their own dressing functions)
+  if (L > 40) {
+    const cc = mkParkedCar();
+    cc.visible = false;
+    cc.position.set(0, 0.06, -L);
+    g.add(cc);
+    g.userData.crossCar = { car: cc, t: 0, running: false, next: 1 + Math.random() * 5, dir: 1 };
+  }
+
   // the El: a girder bridge mid-block on some streets, train dormant until
   // animateSegments sends one across
   if (!seg.alley && L > 55 && Math.random() < 0.3) {
@@ -2586,6 +2602,28 @@ export function animateSegments(segs, time, party, runnerPos) {
           for (const w of u.wings) w.rotation.z = Math.sign(w.position.x) * (0.2 + Math.sin(time * 40 + u.ph) * 0.9);
           if (p.position.y > 14) { p.visible = false; u.state = 'gone'; }
         }
+      }
+    }
+    /* cross traffic: gated on how much street is left before the junction, so
+       a car is never launched into a crossing you could still reach */
+    if (g.userData.crossCar && runnerPos) {
+      const cc = g.userData.crossCar;
+      const remain = seg.len + _pl.z;          // metres of this block still ahead
+      if (!cc.running) {
+        cc.next -= dt;
+        if (cc.next <= 0) {
+          if (remain > 80) {
+            cc.running = true; cc.t = 0;
+            cc.dir = Math.random() < 0.5 ? 1 : -1;
+            cc.car.rotation.y = cc.dir > 0 ? Math.PI / 2 : -Math.PI / 2;
+          } else cc.next = 1.5;                // too close — wait for the next block
+        }
+      } else {
+        cc.t += dt;
+        const x = cc.dir * (-16 + cc.t * 26);
+        cc.car.position.x = x;
+        cc.car.visible = Math.abs(x) < 11;     // behind the corner buildings otherwise
+        if (Math.abs(x) > 16) { cc.running = false; cc.car.visible = false; cc.next = 3 + Math.random() * 7; }
       }
     }
     if (g.userData.els) for (const el of g.userData.els) {
