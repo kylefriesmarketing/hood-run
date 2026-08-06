@@ -1714,7 +1714,13 @@ function gridClear(rect, segs) {
 }
 function buildCityChunk(cx, cz, segs, dname) {
   const rnd = chunkRng(cx, cz);
-  const d = DISTRICTS[dname] || DISTRICTS.block;
+  /* ⚠️ `alley` and `rooftop` are MICRO-districts: they exist in DISTRICTS but
+     carry only a label and coinMult, no palette. `DISTRICTS[x] || block` does
+     not save you — they are truthy and merely incomplete — so reading
+     brickset[0] threw and killed the whole view loop the moment a chunk
+     happened to be built while the player was on a shortcut. Require the
+     field, not the key. */
+  const d = (DISTRICTS[dname] && DISTRICTS[dname].brickset) ? DISTRICTS[dname] : DISTRICTS.block;
   const base = new THREE.Color(d.brickset[0]);
   const B = makeBuilder();
   const ox = cx * CITY_CHUNK + gridOffX, oz = cz * CITY_CHUNK + gridOffZ;

@@ -169,10 +169,40 @@ export function populateSegment(G, seg, buildMeshCb, vinfo) {
     if (o.clear === 'jump' && def.lanes === 1 && rng() < 0.5) {
       for (let i = 0; i < 5; i++) addCoin(G, seg, d - 3 + i * 1.5, o.lanes[0], 0.9 + Math.sin((i / 4) * Math.PI) * 1.15, buildMeshCb, vinfo, true);
     }
-    // guide coins through the open lane of blockers
-    if (def.lanes === 2 && rng() < 0.6) {
+    /* Guide coins through the open lane of a blocker.
+       The death audit is unambiguous: lane-blockers caused 10 of 12 bot
+       deaths, and they were the one hazard that could ship with NO cue for
+       which lane is safe — the guide line appeared only 60% of the time, and
+       when it did it straddled the blocker (d-2 .. d+2.8) rather than leading
+       into it, so it confirmed the answer instead of giving it. Every two-lane
+       blocker now gets a line, and it runs the open lane from 10m out so it
+       reads as a route to take rather than decoration on top of the hazard.
+       Reachability itself is already guaranteed (validatePlacement, re-verified
+       over 225 real encounters with 0 violations) — this is about READING the
+       gap in time, which is where the deaths actually come from. */
+    if (def.lanes === 2) {
       const open = [-1, 0, 1].find(l => !o.lanes.includes(l));
-      for (let i = 0; i < 4; i++) addCoin(G, seg, d - 2 + i * 1.6, open, 0.9, buildMeshCb, vinfo, false);
+      for (let i = 0; i < 6; i++) addCoin(G, seg, d - 10 + i * 2, open, 0.9, buildMeshCb, vinfo, false);
+    }
+
+    /* Invariant guard: a coin in a BLOCKED lane is worse than no coin, because
+       coins mean "come this way" and would invite the player into a wall. Coin
+       stretches are placed before a blocker exists, so the collision is
+       possible in principle within a variant. Measured at zero occurrences
+       today — an audit that appeared to find some was itself wrong, matching
+       street coins against shortcut blockers, which are alternate routes at the
+       same distance and never visible together. Kept as a cheap guard, scoped
+       to the SAME variant. Strays are moved, not deleted: their meshes are
+       already built, so deleting would leave an uncollectible ghost in the road. */
+    if (o.lanes && o.lanes.length && !o.safe && o.lanes.length < 3) {
+      const open = [-1, 0, 1].find(l => !o.lanes.includes(l));
+      const reach = (def.depth || 1.5) + 2;
+      for (const c of G.coins) {
+        if (c.variant !== variant || c.air || c.taken) continue;
+        if (!o.lanes.includes(c.lane) || Math.abs(c.d - d) > reach) continue;
+        c.lane = open;
+        if (c.mesh) c.mesh.position.x = open * LANE_W;
+      }
     }
     groupsSinceRecovery++;
     d += minSp + rng() * 8;

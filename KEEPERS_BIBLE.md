@@ -216,6 +216,34 @@ animateSegments, hidden→run→hidden, 14–30s cadence, random direction),
 with sfx.train (3.4s lowpass rumble + two-tone horn), distance-attenuated
 via the runner position already flowing into animateSegments.
 
+⚠️⚠️ MICRO-DISTRICT CRASH (v34) — a LIVE crash that shipped in v26 and was
+found only because a probe reported a STACK instead of a boolean.
+buildCityChunk did `DISTRICTS[dname] || DISTRICTS.block` then read
+`d.brickset[0]`. But `alley` and `rooftop` are MICRO-districts: they exist
+in DISTRICTS carrying only label/icon/coinMult and NO palette. They are
+truthy, so the `||` fallback never fires, and the read threw — killing the
+entire view loop the moment a city chunk happened to be built while the
+player was on a shortcut. Intermittent, which is why weeks of runs missed
+it. **Require the FIELD you need, never the key** — anything reading a
+district palette must guard on `.brickset`/`.sky`, as applyDistrict already
+did with `if (!d || !d.sky) return`. Regression test: force every shortcut
+(`nxt.alleyPending` -> steer to `nxt.splitSide`); 10,379 shortcut frames
+over 8 seeds, 0 errors.
+
+GUIDE COINS (v34): the death audit found lane-blockers caused 10 of 12 bot
+deaths, and they were the one hazard that could ship with NO cue for which
+lane is open — the guide line appeared only 60% of the time and straddled
+the blocker rather than leading into it. Now every two-lane blocker gets a
+line running the open lane from 10m out (verified 100% coverage, median lead
+10m). Reachability itself was NOT the problem: replaying validatePlacement's
+rule against 225 real encounters at real speeds found 0 violations, so the
+generator's fairness guarantee holds and the deaths are reading time, not
+impossibility. ⚠️ An audit that appeared to find "misleading" coins in
+blocked lanes was measuring VARIANT 1 (shortcut) coins against VARIANT 0
+(street) blockers — alternate routes at the same path distance that are
+never visible together. Always filter coins by variant, as the obstacle
+checks already do.
+
 ⚠️⚠️ REACTION BUDGET (v33) — the first GAMEPLAY-FAIRNESS measurement ever run
 on this project, and it found a real defect. populateSegment opened every
 block with a flat `startD = seg.start + 9`. A block begins AT A JUNCTION,
